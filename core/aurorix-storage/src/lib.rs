@@ -6,6 +6,7 @@ pub mod catalog_schema;
 pub mod database;
 pub mod fts_schema;
 pub mod migration;
+pub mod scan_observation;
 pub mod search;
 
 /// The complete migration set for the current local catalog.
