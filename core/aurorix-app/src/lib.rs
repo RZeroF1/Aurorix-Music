@@ -1,1 +1,3 @@
-//! Application use cases, ports, and reducers will be implemented in Gate 1.
+//! Application use cases, ports, and reducers.
+
+pub mod error;
