@@ -1,0 +1,70 @@
+# Rust and native build output
+target/
+bin/
+obj/
+*.pdb
+*.dSYM/
+
+# .NET, Visual Studio, Android, and IDE state
+.vs/
+.vscode/
+.idea/
+.gradle/
+local.properties
+*.user
+*.suo
+*.userprefs
+
+# Generated bindings and build packages
+**/generated/
+**/gen/
+artifacts/
+AppPackages/
+*.apk
+*.aab
+*.msix
+*.appx
+
+# Local databases and test output
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+test-results/
+coverage/
+*.log
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+appsettings.*.json
+!appsettings.example.json
+*.pem
+*.key
+*.p12
+*.pfx
+id_ed25519
+id_rsa
+secrets/
+
+# Maintainer-only planning, operations, and local notes. This directory is a
+# publication guard, not a substitute for a separate private repository or a
+# secrets manager.
+/private/
+
+# Local Agent task context and handoff state. Keep only reusable templates and
+# publication-safe guidance under AGENTS/ tracked.
+/AGENTS/state/
+/AGENTS/handoffs/
+/AGENTS/local/
+
+# Provider packages and local caches
+*.tep
+*.wasm
+.cache/
+
+# OS metadata
+.DS_Store
+Thumbs.db
