@@ -139,6 +139,17 @@ impl Database {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
         let connection = Connection::open(path).map_err(|source| DatabaseError::Open { source })?;
 
+        connection
+            .execute_batch("PRAGMA foreign_keys = ON")
+            .map_err(|source| DatabaseError::ForeignKeysCheck { source })?;
+
+        let foreign_keys: i64 = connection
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .map_err(|source| DatabaseError::ForeignKeysCheck { source })?;
+        if foreign_keys != 1 {
+            return Err(DatabaseError::ForeignKeysUnavailable);
+        }
+
         let sqlite_version = query_sqlite_version(&connection)?;
         if sqlite_version < MINIMUM_SQLITE_VERSION {
             return Err(DatabaseError::UnsupportedSqliteVersion {
@@ -306,6 +317,10 @@ pub enum DatabaseError {
     },
     /// The build does not provide FTS5.
     Fts5Unavailable,
+    /// Foreign-key enforcement could not be enabled.
+    ForeignKeysUnavailable,
+    /// Checking foreign-key enforcement failed unexpectedly.
+    ForeignKeysCheck { source: rusqlite::Error },
     /// Checking or exercising FTS5 failed unexpectedly.
     Fts5Check { source: rusqlite::Error },
     /// WAL mode could not be confirmed for this database.
@@ -334,6 +349,12 @@ impl fmt::Display for DatabaseError {
                 formatter.write_str("SQLite version is not supported")
             }
             Self::Fts5Unavailable => formatter.write_str("SQLite FTS5 is unavailable"),
+            Self::ForeignKeysUnavailable => {
+                formatter.write_str("SQLite foreign-key enforcement is unavailable")
+            }
+            Self::ForeignKeysCheck { .. } => {
+                formatter.write_str("unable to configure SQLite foreign-key enforcement")
+            }
             Self::Fts5Check { .. } => formatter.write_str("unable to check SQLite FTS5"),
             Self::WalUnavailable => formatter.write_str("SQLite WAL mode is unavailable"),
             Self::WalCheck { .. } => formatter.write_str("unable to configure SQLite WAL mode"),
@@ -353,6 +374,7 @@ impl Error for DatabaseError {
             Self::Open { source }
             | Self::VersionQuery { source }
             | Self::Fts5Check { source }
+            | Self::ForeignKeysCheck { source }
             | Self::WalCheck { source }
             | Self::WriteOperation { source }
             | Self::WriteTransaction { source }
@@ -360,6 +382,7 @@ impl Error for DatabaseError {
             Self::InvalidSqliteVersion { .. }
             | Self::UnsupportedSqliteVersion { .. }
             | Self::Fts5Unavailable
+            | Self::ForeignKeysUnavailable
             | Self::WalUnavailable
             | Self::WriteLockPoisoned => None,
         }
@@ -371,7 +394,12 @@ mod tests {
     use std::{
         fs,
         path::PathBuf,
-        sync::atomic::{AtomicU64, Ordering},
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+            mpsc,
+        },
+        thread,
     };
 
     use super::{
@@ -409,6 +437,12 @@ mod tests {
         assert!(capabilities.sqlite_version() >= MINIMUM_SQLITE_VERSION);
         assert!(capabilities.fts5());
         assert!(capabilities.wal());
+        let foreign_keys: i64 = database
+            .execute_write(|connection| {
+                connection.query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            })
+            .expect("foreign-key status");
+        assert_eq!(foreign_keys, 1);
 
         drop(database);
         fs::remove_file(path).expect("remove temporary database");
@@ -498,6 +532,59 @@ mod tests {
             })
             .expect("count rows");
         assert_eq!(count, 0);
+
+        drop(database);
+        fs::remove_file(path).expect("remove temporary database");
+    }
+
+    #[test]
+    fn concurrent_writers_cannot_interleave_a_transaction() {
+        let path = temporary_database_path();
+        let database = Arc::new(Database::open(&path).expect("bundled SQLite capabilities"));
+        database
+            .execute_write(|connection| {
+                connection.execute("CREATE TABLE events (value INTEGER NOT NULL)", [])
+            })
+            .expect("create table");
+
+        let (entered_sender, entered_receiver) = mpsc::channel();
+        let (release_sender, release_receiver) = mpsc::channel();
+        let first_database = Arc::clone(&database);
+        let first_writer = thread::spawn(move || {
+            first_database
+                .with_write_transaction(|transaction| {
+                    transaction.execute("INSERT INTO events (value) VALUES (1)", [])?;
+                    entered_sender.send(()).expect("signal first write");
+                    release_receiver.recv().expect("release first write");
+                    transaction.execute("INSERT INTO events (value) VALUES (2)", [])?;
+                    Ok(())
+                })
+                .expect("first transaction succeeds");
+        });
+
+        entered_receiver.recv().expect("first write acquired lock");
+        let second_database = Arc::clone(&database);
+        let second_writer = thread::spawn(move || {
+            second_database
+                .execute_write(|connection| {
+                    connection.execute("INSERT INTO events (value) VALUES (3)", [])
+                })
+                .expect("second write succeeds");
+        });
+
+        release_sender.send(()).expect("release first transaction");
+        first_writer.join().expect("first writer joins");
+        second_writer.join().expect("second writer joins");
+
+        let values = database
+            .execute_write(|connection| {
+                let mut statement =
+                    connection.prepare("SELECT value FROM events ORDER BY rowid")?;
+                let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .expect("read values through write boundary");
+        assert_eq!(values, vec![1, 2, 3]);
 
         drop(database);
         fs::remove_file(path).expect("remove temporary database");

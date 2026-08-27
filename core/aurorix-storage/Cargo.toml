@@ -7,8 +7,10 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+aurorix-model = { path = "../aurorix-model" }
 rusqlite.workspace = true
 sha2.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true

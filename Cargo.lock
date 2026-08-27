@@ -28,6 +28,9 @@ version = "0.1.0"
 [[package]]
 name = "aurorix-library"
 version = "0.1.0"
+dependencies = [
+ "aurorix-model",
+]
 
 [[package]]
 name = "aurorix-model"
@@ -44,8 +47,10 @@ version = "0.1.0"
 name = "aurorix-storage"
 version = "0.1.0"
 dependencies = [
+ "aurorix-model",
  "rusqlite",
  "sha2",
+ "uuid",
 ]
 
 [[package]]

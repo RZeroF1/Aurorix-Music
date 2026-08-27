@@ -1,1 +1,3 @@
-//! Library scanning and indexing orchestration will be implemented in Gate 1.
+//! Library scanning and indexing orchestration.
+
+pub mod scan_state;
