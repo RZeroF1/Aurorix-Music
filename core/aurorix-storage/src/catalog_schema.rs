@@ -125,6 +125,7 @@ pub const LOCAL_CATALOG_MIGRATION: Migration = Migration {
 pub const LOCAL_CATALOG_MIGRATIONS: &[Migration] = &[
     LOCAL_CATALOG_MIGRATION,
     crate::stats_schema::PLAY_STATS_MIGRATION,
+    crate::sync_schema::SYNC_MIGRATION,
 ];
 
 #[cfg(test)]
@@ -140,11 +141,15 @@ mod tests {
         assert_eq!(LOCAL_CATALOG_MIGRATION.name, "local_catalog");
         assert!(LOCAL_CATALOG_SCHEMA_SQL.contains("local_catalog_asset"));
         assert!(!LOCAL_CATALOG_SCHEMA_SQL.contains("VIRTUAL TABLE"));
-        assert_eq!(LOCAL_CATALOG_MIGRATIONS.len(), 2);
+        assert_eq!(LOCAL_CATALOG_MIGRATIONS.len(), 3);
         assert_eq!(LOCAL_CATALOG_MIGRATIONS[0], LOCAL_CATALOG_MIGRATION);
         assert_eq!(
             LOCAL_CATALOG_MIGRATIONS[1],
             crate::stats_schema::PLAY_STATS_MIGRATION
+        );
+        assert_eq!(
+            LOCAL_CATALOG_MIGRATIONS[2],
+            crate::sync_schema::SYNC_MIGRATION
         );
     }
 
