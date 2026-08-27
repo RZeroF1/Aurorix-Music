@@ -1,0 +1,10 @@
+[package]
+name = "aurorix-extensions"
+description = "Aurorix Provider host and package policy boundary."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,10 @@
+[package]
+name = "aurorix-audio"
+description = "Aurorix platform-neutral audio runtime boundary."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true

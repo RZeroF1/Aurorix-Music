@@ -1,0 +1,10 @@
+[package]
+name = "aurorix-ffi-c"
+description = "Aurorix C ABI facade adapter."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true

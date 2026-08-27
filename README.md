@@ -5,13 +5,19 @@ native Windows and Android clients, and an optional self-hosted Cloud server.
 
 ## Status
 
-This is the public repository scaffold. It is not a usable player or server
-yet: the Rust Core, Windows application, Android application, audio backend,
-Provider host, and Cloud service have not been implemented.
+The repository has a reproducible Rust Workspace baseline. It is not a usable
+player or server yet: the Rust Core, Windows application, Android application,
+audio backend, Provider host, and Cloud service have not been implemented.
+
+Run the local Rust quality checks with:
+
+```powershell
+.\scripts\verify-rust.ps1
+```
 
 ## Components
 
-- `core/` - shared Rust domain and application Core.
+- `core/` - shared Rust Workspace for the domain and application Core.
 - `apps/windows/` - planned WinUI 3 native client.
 - `apps/android/` - planned Android and Compose native client.
 - `server/` - planned ASP.NET Core Cloud server for optional account sync.

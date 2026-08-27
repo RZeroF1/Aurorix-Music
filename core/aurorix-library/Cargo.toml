@@ -1,0 +1,10 @@
+[package]
+name = "aurorix-library"
+description = "Aurorix library scanning and indexing orchestration."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true

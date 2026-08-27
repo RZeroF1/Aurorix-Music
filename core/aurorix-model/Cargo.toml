@@ -1,0 +1,10 @@
+[package]
+name = "aurorix-model"
+description = "Portable Aurorix domain types and validation."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true

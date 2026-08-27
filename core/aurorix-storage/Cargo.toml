@@ -1,0 +1,10 @@
+[package]
+name = "aurorix-storage"
+description = "Aurorix local persistence adapters."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true

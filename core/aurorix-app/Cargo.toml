@@ -1,0 +1,10 @@
+[package]
+name = "aurorix-app"
+description = "Aurorix application use cases, ports, and reducers."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,10 @@
+[package]
+name = "aurorix-sync"
+description = "Aurorix synchronization client and recovery coordination."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
