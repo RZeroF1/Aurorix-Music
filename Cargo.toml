@@ -27,4 +27,6 @@ all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
+rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "modern_sqlite"] }
+sha2 = "0.10.9"
 uuid = { version = "1.18.1", features = ["v7"] }

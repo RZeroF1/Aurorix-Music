@@ -1,1 +1,5 @@
-//! Local persistence adapters will be implemented in Gate 1.
+//! `SQLite` implementation of application repositories, migrations, projections,
+//! and the local outbox.
+
+pub mod database;
+pub mod migration;
