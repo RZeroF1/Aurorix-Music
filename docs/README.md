@@ -8,6 +8,8 @@ maintainer planning baseline.
 ## Available Documents
 
 - `architecture-overview.md` - public system boundaries and component roles.
+- `product-overview.md` - public product capability map and implementation
+  stages.
 - `publication-policy.md` - the rule for deciding whether material belongs in
   this repository.
 
