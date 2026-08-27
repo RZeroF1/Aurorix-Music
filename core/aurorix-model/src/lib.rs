@@ -1,1 +1,3 @@
-//! Portable domain types and validation will be implemented in Gate 1.
+//! Portable domain types and validation.
+
+pub mod ids;

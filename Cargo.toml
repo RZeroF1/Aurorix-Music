@@ -25,3 +25,6 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+uuid = { version = "1.18.1", features = ["v7"] }
