@@ -122,7 +122,10 @@ pub const LOCAL_CATALOG_MIGRATION: Migration = Migration {
 };
 
 /// The ordered migrations currently required for local catalog storage.
-pub const LOCAL_CATALOG_MIGRATIONS: &[Migration] = &[LOCAL_CATALOG_MIGRATION];
+pub const LOCAL_CATALOG_MIGRATIONS: &[Migration] = &[
+    LOCAL_CATALOG_MIGRATION,
+    crate::stats_schema::PLAY_STATS_MIGRATION,
+];
 
 #[cfg(test)]
 mod tests {
@@ -137,7 +140,12 @@ mod tests {
         assert_eq!(LOCAL_CATALOG_MIGRATION.name, "local_catalog");
         assert!(LOCAL_CATALOG_SCHEMA_SQL.contains("local_catalog_asset"));
         assert!(!LOCAL_CATALOG_SCHEMA_SQL.contains("VIRTUAL TABLE"));
-        assert_eq!(LOCAL_CATALOG_MIGRATIONS, &[LOCAL_CATALOG_MIGRATION]);
+        assert_eq!(LOCAL_CATALOG_MIGRATIONS.len(), 2);
+        assert_eq!(LOCAL_CATALOG_MIGRATIONS[0], LOCAL_CATALOG_MIGRATION);
+        assert_eq!(
+            LOCAL_CATALOG_MIGRATIONS[1],
+            crate::stats_schema::PLAY_STATS_MIGRATION
+        );
     }
 
     #[test]
