@@ -47,6 +47,7 @@ version = "0.1.0"
 name = "aurorix-storage"
 version = "0.1.0"
 dependencies = [
+ "aurorix-app",
  "aurorix-model",
  "rusqlite",
  "sha2",
