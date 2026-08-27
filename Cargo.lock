@@ -5,6 +5,9 @@ version = 4
 [[package]]
 name = "aurorix-app"
 version = "0.1.0"
+dependencies = [
+ "aurorix-model",
+]
 
 [[package]]
 name = "aurorix-audio"

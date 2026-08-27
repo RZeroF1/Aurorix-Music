@@ -6,5 +6,8 @@ license.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[dependencies]
+aurorix-model = { path = "../aurorix-model" }
+
 [lints]
 workspace = true
