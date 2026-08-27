@@ -57,6 +57,10 @@ dependencies = [
 [[package]]
 name = "aurorix-sync"
 version = "0.1.0"
+dependencies = [
+ "sha2",
+ "uuid",
+]
 
 [[package]]
 name = "bitflags"

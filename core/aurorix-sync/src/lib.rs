@@ -1,1 +1,5 @@
-//! Synchronization and recovery coordination will be implemented in Gate 1.
+//! Synchronization and recovery coordination for the local Core.
+
+pub mod outbox;
+pub mod reducer;
+pub mod snapshot;
