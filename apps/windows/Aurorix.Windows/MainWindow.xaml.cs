@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -43,7 +44,7 @@ public sealed partial class MainWindow : Window
         ReducedMotionEnabled = !uiSettings.AnimationsEnabled;
 
         _accessibilitySettings = new AccessibilitySettings();
-        _accessibilitySettings.HighContrastChanged += AccessibilitySettings_HighContrastChanged;
+        TrySubscribeToAccessibilityChanges();
         ApplyHighContrastBackdrop();
 
         ConfigureWindowBounds();
@@ -54,6 +55,20 @@ public sealed partial class MainWindow : Window
     private void AccessibilitySettings_HighContrastChanged(AccessibilitySettings sender, object args)
     {
         ApplyHighContrastBackdrop();
+    }
+
+    private void TrySubscribeToAccessibilityChanges()
+    {
+        try
+        {
+            _accessibilitySettings.HighContrastChanged += AccessibilitySettings_HighContrastChanged;
+        }
+        catch (COMException)
+        {
+            // Some packaged environments do not expose the WinRT event source.
+            // Initial HighContrast state remains available; startup must not fail
+            // because a later settings notification cannot be subscribed.
+        }
     }
 
     private void ApplyHighContrastBackdrop()
