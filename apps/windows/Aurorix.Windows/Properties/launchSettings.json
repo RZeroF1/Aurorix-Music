@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Aurorix.Windows (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "Aurorix.Windows (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

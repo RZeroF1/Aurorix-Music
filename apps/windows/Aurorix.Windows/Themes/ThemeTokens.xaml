@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Color x:Key="AurorixCanvasColor">#DDF1F3</Color>
+    <Color x:Key="AurorixInkColor">#172026</Color>
+    <Color x:Key="AurorixMutedInkColor">#647078</Color>
+    <Color x:Key="AurorixGlassBorderColor">#84FFFFFF</Color>
+    <SolidColorBrush x:Key="AurorixCanvasBrush" Color="{StaticResource AurorixCanvasColor}" />
+    <SolidColorBrush x:Key="AurorixInkBrush" Color="{StaticResource AurorixInkColor}" />
+    <SolidColorBrush x:Key="AurorixMutedInkBrush" Color="{StaticResource AurorixMutedInkColor}" />
+    <SolidColorBrush x:Key="AurorixGlassBrush" Color="#E9FFFFFF" />
+    <SolidColorBrush x:Key="AurorixGlassBorderBrush" Color="{StaticResource AurorixGlassBorderColor}" />
+</ResourceDictionary>

@@ -23,7 +23,12 @@ AppPackages/
 *.apk
 *.aab
 *.msix
+*.msixbundle
+*.msixupload
+*.appinstaller
 *.appx
+*.appxbundle
+*.appxupload
 
 # Local databases and test output
 *.db
