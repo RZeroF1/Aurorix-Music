@@ -7,6 +7,7 @@ members = [
     "core/aurorix-playback",
     "core/aurorix-runtime",
     "core/aurorix-audio",
+    "core/aurorix-audio-windows",
     "core/aurorix-sync",
     "core/aurorix-extensions",
     "core/aurorix-ffi-c",

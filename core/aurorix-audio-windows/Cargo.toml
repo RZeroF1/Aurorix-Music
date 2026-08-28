@@ -1,0 +1,33 @@
+[package]
+name = "aurorix-audio-windows"
+description = "Windows x64 WASAPI Shared output adapter for Aurorix."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+# This crate is the only owner of the unsafe Windows COM/WASAPI bindings. The
+# platform-neutral audio crate remains unsafe-free and keeps its realtime
+# contract independent from the Windows ABI.
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[dependencies]
+aurorix-audio = { path = "../aurorix-audio" }
+
+[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
+windows = { version = "0.62.2", default-features = false, features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_Media_KernelStreaming",
+    "Win32_Media_Multimedia",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Threading",
+    "Win32_Security",
+    "Win32_System_Variant",
+] }

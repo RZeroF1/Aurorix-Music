@@ -78,7 +78,7 @@ if (-not (Test-Path -LiteralPath $windowsProject)) {
     Write-Check "no unsupported project platforms" ($projectText -notmatch '<Platforms>[^<]*(AnyCPU|ARM64|x86)') "project platform list contains no AnyCPU, ARM64, or x86 entry."
     Write-Check "x64 platform target" ($projectText -match '<PlatformTarget>x64</PlatformTarget>') "PlatformTarget is x64."
     Write-Check "win-x64 runtime" ($projectText -match '<RuntimeIdentifiers>win-x64</RuntimeIdentifiers>') "RuntimeIdentifiers contains win-x64."
-    Write-Check "unpackaged baseline" ($projectText -match '<WindowsPackageType>None</WindowsPackageType>') "WindowsPackageType is None."
+    Write-Check "packaged baseline" ($projectText -match '<WindowsPackageType>MSIX</WindowsPackageType>') "WindowsPackageType is MSIX."
 }
 
 if (-not (Test-Path -LiteralPath $windowsSolution)) {
@@ -141,7 +141,7 @@ $hasRequestedWindowsAppSdk = $hasDeclaredWindowsAppSdk -and ($windowsPackageVers
 Write-Check "Windows App SDK declaration" $hasDeclaredWindowsAppSdk $(if ($hasDeclaredWindowsAppSdk) { "project declares version $declaredWindowsAppSdk." } else { "Microsoft.WindowsAppSDK PackageReference was not found." })
 Write-Check "Windows App SDK restore" $hasRequestedWindowsAppSdk $(if ($windowsPackageVersions.Count) { "declared: $declaredWindowsAppSdk; restored version(s): $($windowsPackageVersions -join ', ')." } else { "declared: $declaredWindowsAppSdk; package is not in the current NuGet global package cache; run dotnet restore first." })
 
-foreach ($optionalTool in @("protoc", "cbindgen", "csbindgen", "iscc", "makensis")) {
+foreach ($optionalTool in @("protoc", "cbindgen", "csbindgen")) {
     $toolVersion = Get-CommandVersion $optionalTool
     Write-Check "Optional tool $optionalTool" ($null -ne $toolVersion) (Get-DisplayValue $toolVersion "$optionalTool was not found on PATH.") -Optional
 }

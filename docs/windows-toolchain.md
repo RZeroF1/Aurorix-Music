@@ -15,8 +15,7 @@ From the repository root, run:
 The checker validates the x64 project and solution declarations, the .NET CLI,
 Visual Studio C++ x64 tools, MSVC, Windows SDK, Rust MSVC target, and the
 restored Windows App SDK package. It also reports optional tools used by later
-slices: `protoc`, `cbindgen`, `csbindgen`, Inno Setup (`iscc`), and NSIS
-(`makensis`). Missing optional tools are reported as `INFO` until a slice needs
+slices: `protoc`, `cbindgen`, and `csbindgen`. Missing optional tools are reported as `INFO` until a slice needs
 them. Use `-RequireOptionalTools` when a local task is ready to require them.
 
 The checker's output deliberately reports versions and capability states rather
@@ -30,15 +29,13 @@ The startup baseline can be built with:
 ```powershell
 dotnet restore apps/windows/Aurorix.Windows.slnx
 dotnet build apps/windows/Aurorix.Windows.slnx --no-restore -c Debug -p:Platform=x64
-dotnet publish apps/windows/Aurorix.Windows/Aurorix.Windows.csproj `
+dotnet build apps/windows/Aurorix.Windows/Aurorix.Windows.csproj `
   --no-restore -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64
 ```
 
-The publish output is an unpackaged x64 application. The preferred product
-distribution is a conventional EXE installer around this output. Packaged
-MSIX/MSIX Bundle remains a secondary release path and requires a separately
-managed signing certificate; certificates and private keys never belong in
-the repository.
+The Windows project is packaged x64 MSIX. The release pipeline produces both a
+standalone MSIX package and an MSIX Bundle; signing certificates and private
+keys are managed outside the repository.
 
 Rust checks remain independent of the Windows host:
 
@@ -61,15 +58,15 @@ Rust checks remain independent of the Windows host:
 - FFI generation: `protoc`, `cbindgen`, and `csbindgen` are required only when
   the corresponding FFI slice starts. Their versions must be pinned in that
   slice before generated artifacts are committed.
-- Installer generation: the EXE installer technology is intentionally not
-  selected by this baseline. The installer slice must record its chosen tool and
-  version before adding installer definitions.
+- Packaging: MSIX and MSIX Bundle are the only Windows distribution outputs for
+  this phase. The packaging slice must record signing and clean-machine install
+  evidence before release claims are made.
 
 ## Evidence and limits
 
 The verification script is a local preflight, not proof of a clean-machine
-install, Visual Studio F5 launch, real WASAPI output, installer upgrade, or
-MSIX signing. Those require dedicated tests in the relevant Gate 3 slices.
+install, Visual Studio F5 launch, real WASAPI output, MSIX upgrade, or package
+signing. Those require dedicated tests in the relevant Gate 3 slices.
 The script also does not alter `AnyCPU` settings or `.gitignore`; x64-only
 configuration remains owned by the Windows project and solution.
 
@@ -86,7 +83,6 @@ baseline, not a requirement to publish machine-specific paths.
 - Windows App SDK NuGet package `2.4.0`.
 - Rust `1.97.1`, Cargo `1.97.1`, target `x86_64-pc-windows-msvc`.
 
-`protoc`, `cbindgen`, `csbindgen`, Inno Setup, and NSIS were not installed on
-that machine at this checkpoint. They are intentionally pending until the FFI
-and installer slices select and pin their versions. Their absence does not
-block the current Windows x64 startup baseline.
+`protoc`, `cbindgen`, and `csbindgen` were not installed on that machine at this
+checkpoint. They are intentionally pending until the FFI slice selects and pins
+their versions.

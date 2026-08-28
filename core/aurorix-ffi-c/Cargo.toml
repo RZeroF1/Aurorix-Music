@@ -6,5 +6,18 @@ license.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
-[lints]
-workspace = true
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+aurorix-runtime = { path = "../aurorix-runtime" }
+
+# The C boundary necessarily contains a small, audited set of raw-pointer
+# operations. Keep this exception local to this adapter; every domain crate
+# remains covered by the workspace-level unsafe_code = "forbid" policy.
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
