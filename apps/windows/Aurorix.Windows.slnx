@@ -6,4 +6,7 @@
     <Platform Solution="*|x64" Project="x64" />
     <Deploy />
   </Project>
+  <Project Path="Aurorix.Platform.Windows/Aurorix.Platform.Windows.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
 </Solution>

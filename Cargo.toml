@@ -5,6 +5,7 @@ members = [
     "core/aurorix-storage",
     "core/aurorix-library",
     "core/aurorix-playback",
+    "core/aurorix-runtime",
     "core/aurorix-audio",
     "core/aurorix-sync",
     "core/aurorix-extensions",

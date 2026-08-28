@@ -52,6 +52,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurorix-runtime"
+version = "0.1.0"
+dependencies = [
+ "aurorix-playback",
+ "aurorix-storage",
+]
+
+[[package]]
 name = "aurorix-storage"
 version = "0.1.0"
 dependencies = [

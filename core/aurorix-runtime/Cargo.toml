@@ -1,0 +1,14 @@
+[package]
+name = "aurorix-runtime"
+description = "Aurorix Core composition root and process-scoped host lifetime."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+aurorix-playback = { path = "../aurorix-playback" }
+aurorix-storage = { path = "../aurorix-storage" }
+
+[lints]
+workspace = true
