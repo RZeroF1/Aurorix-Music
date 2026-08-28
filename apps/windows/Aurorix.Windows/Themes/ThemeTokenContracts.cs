@@ -49,6 +49,7 @@ public static class ThemeTokenKeys
     public const string BorderOpacity = "Aurorix.Theme.Opacity.Border";
     public const string DisabledOpacity = "Aurorix.Theme.Opacity.Disabled";
     public const string SurfaceBlur = "Aurorix.Theme.Blur.Surface";
+    public const string SurfaceVividness = "Aurorix.Theme.Vibrancy.Surface";
 
     public const string MaterialSurface = "Aurorix.Theme.Material.Surface";
     public const string MotionEnabled = "Aurorix.Theme.Motion.Enabled";
@@ -91,6 +92,7 @@ public static class ThemeTokenKeys
         BorderOpacity,
         DisabledOpacity,
         SurfaceBlur,
+        SurfaceVividness,
         MaterialSurface,
         MotionEnabled,
         MotionFastDuration,
@@ -125,7 +127,12 @@ public enum ThemeMaterial
 {
     Solid,
     Mica,
+    MicaAlt,
     Acrylic,
+    TransparentAcrylic,
+    CustomAcrylic,
+    None,
+    // Kept for registry compatibility with the earlier Gate 3 contract.
     Glass,
 }
 
@@ -605,6 +612,7 @@ public static class ThemeTokenSchema
             [ThemeTokenKeys.BorderOpacity] = new(ThemeTokenValueKind.Number, 0, 1),
             [ThemeTokenKeys.DisabledOpacity] = new(ThemeTokenValueKind.Number, 0, 1),
             [ThemeTokenKeys.SurfaceBlur] = new(ThemeTokenValueKind.Number, 0, 96),
+            [ThemeTokenKeys.SurfaceVividness] = new(ThemeTokenValueKind.Number, 0, 1),
             [ThemeTokenKeys.MaterialSurface] = new(ThemeTokenValueKind.Material),
             [ThemeTokenKeys.MotionEnabled] = new(ThemeTokenValueKind.Boolean),
             [ThemeTokenKeys.MotionFastDuration] = new(ThemeTokenValueKind.Number, 0, 2000),
@@ -695,7 +703,10 @@ public static class ThemeTokenSchema
             case ThemeTokenValueKind.Material:
                 if (!Enum.TryParse<ThemeMaterial>(source.Value, true, out var material))
                 {
-                    issue = new(source.Key, ThemeTokenIssueKind.InvalidValue, "Material must be solid, mica, acrylic, or glass.");
+                    issue = new(
+                        source.Key,
+                        ThemeTokenIssueKind.InvalidValue,
+                        "Material must be solid, mica, micaAlt, acrylic, transparentAcrylic, customAcrylic, none, or glass.");
                     return false;
                 }
 
@@ -748,6 +759,7 @@ public static class ThemeSystemDefaults
             ThemeTokenValue.Color(ThemeTokenKeys.InkColor, variant == ThemeSystemVariant.Dark ? "#F5FAF9" : "#172026"),
             ThemeTokenValue.Color(ThemeTokenKeys.MutedInkColor, variant == ThemeSystemVariant.Dark ? "#B2C1C0" : "#647078"),
             ThemeTokenValue.Material(ThemeTokenKeys.MaterialSurface, ThemeMaterial.Solid),
+            ThemeTokenValue.Number(ThemeTokenKeys.SurfaceVividness, 0.6),
             ThemeTokenValue.Boolean(ThemeTokenKeys.MotionEnabled, true),
         ];
 }
@@ -851,6 +863,7 @@ public static class BuiltInThemeCatalog
             [ThemeTokenKeys.BorderOpacity] = ThemeTokenValue.Number(ThemeTokenKeys.BorderOpacity, 0.52),
             [ThemeTokenKeys.DisabledOpacity] = ThemeTokenValue.Number(ThemeTokenKeys.DisabledOpacity, 0.45),
             [ThemeTokenKeys.SurfaceBlur] = ThemeTokenValue.Number(ThemeTokenKeys.SurfaceBlur, 18),
+            [ThemeTokenKeys.SurfaceVividness] = ThemeTokenValue.Number(ThemeTokenKeys.SurfaceVividness, 0.6),
             [ThemeTokenKeys.MaterialSurface] = ThemeTokenValue.Material(ThemeTokenKeys.MaterialSurface, material),
             [ThemeTokenKeys.MotionEnabled] = ThemeTokenValue.Boolean(ThemeTokenKeys.MotionEnabled, true),
             [ThemeTokenKeys.MotionFastDuration] = ThemeTokenValue.Number(ThemeTokenKeys.MotionFastDuration, 120),

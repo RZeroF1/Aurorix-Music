@@ -885,5 +885,12 @@ internal static class ExtensionContractValidation
         parsed >= -10000m && parsed <= 10000m;
 
     private static bool IsMaterial(string? value) =>
-        value is "solid" or "mica" or "acrylic" or "glass";
+        value is "solid"
+            or "mica"
+            or "mica-alt"
+            or "acrylic"
+            or "transparent-acrylic"
+            or "custom-acrylic"
+            or "none"
+            or "glass";
 }

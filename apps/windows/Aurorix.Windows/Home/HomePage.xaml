@@ -6,5 +6,12 @@
     Background="Transparent"
     HighContrastAdjustment="Auto"
     AutomationProperties.Name="首页">
-    <Grid />
+    <Grid Padding="40,28,40,40">
+        <TextBlock
+            Text="首页"
+            FontSize="28"
+            FontWeight="SemiBold"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top" />
+    </Grid>
 </Page>

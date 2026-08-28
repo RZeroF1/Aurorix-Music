@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Aurorix.Windows.Settings.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="Transparent"
+    AutomationProperties.Name="设置">
+    <ScrollViewer
+        HorizontalScrollBarVisibility="Disabled"
+        VerticalScrollBarVisibility="Auto"
+        HorizontalContentAlignment="Stretch">
+        <Grid Padding="40,28,40,40" HorizontalAlignment="Left">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock
+                Grid.Row="0"
+                Text="设置"
+                FontSize="28"
+                FontWeight="SemiBold" />
+
+            <TextBlock
+                Grid.Row="1"
+                Margin="0,10,0,0"
+                Text="外观"
+                FontSize="20"
+                FontWeight="SemiBold" />
+
+            <Grid
+                Grid.Row="2"
+                Margin="0,24,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="180" />
+                    <ColumnDefinition Width="320" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock
+                    Grid.Row="0"
+                    Grid.Column="0"
+                    VerticalAlignment="Center"
+                    Text="主题"
+                    FontWeight="SemiBold" />
+                <ComboBox
+                    x:Name="MaterialComboBox"
+                    Grid.Row="0"
+                    Grid.Column="1"
+                    Width="Auto"
+                    HorizontalAlignment="Left"
+                    SelectionChanged="MaterialComboBox_SelectionChanged"
+                    AutomationProperties.Name="主题">
+                    <ComboBoxItem Tag="mica" Content="云母" />
+                    <ComboBoxItem Tag="mica-alt" Content="更加透明的云母" />
+                    <ComboBoxItem Tag="acrylic" Content="亚克力" />
+                    <ComboBoxItem Tag="transparent-acrylic" Content="更加透明的亚克力" />
+                    <ComboBoxItem Tag="custom-acrylic" Content="亚克力DIY" />
+                    <ComboBoxItem Tag="none" Content="None(浅色模式别试)" />
+                </ComboBox>
+
+                <StackPanel
+                    x:Name="CustomAcrylicOptionsPanel"
+                    Grid.Row="1"
+                    Grid.Column="1"
+                    Margin="0,18,0,0"
+                    Spacing="4"
+                    Visibility="Collapsed">
+                    <TextBlock Text="通透度" FontWeight="SemiBold" />
+                    <Slider
+                        x:Name="CustomAcrylicTransparencySlider"
+                        Width="280"
+                        Minimum="0"
+                        Maximum="1"
+                        StepFrequency="0.01"
+                        ValueChanged="CustomAcrylicTransparencySlider_ValueChanged"
+                        AutomationProperties.Name="自定义亚克力通透度" />
+                    <TextBlock
+                        Margin="0,8,0,0"
+                        Text="鲜艳度"
+                        FontWeight="SemiBold" />
+                    <Slider
+                        x:Name="CustomAcrylicVividnessSlider"
+                        Width="280"
+                        Minimum="0"
+                        Maximum="1"
+                        StepFrequency="0.01"
+                        ValueChanged="CustomAcrylicVividnessSlider_ValueChanged"
+                        AutomationProperties.Name="自定义亚克力鲜艳程度" />
+                </StackPanel>
+
+                <TextBlock
+                    Grid.Row="2"
+                    Grid.Column="0"
+                    Margin="0,18,0,0"
+                    VerticalAlignment="Center"
+                    Text="明暗模式"
+                    FontWeight="SemiBold" />
+                <ComboBox
+                    x:Name="VariantComboBox"
+                    Grid.Row="2"
+                    Grid.Column="1"
+                    Margin="0,18,0,0"
+                    Width="Auto"
+                    HorizontalAlignment="Left"
+                    SelectionChanged="VariantComboBox_SelectionChanged"
+                    AutomationProperties.Name="深浅模式">
+                    <ComboBoxItem Tag="light" Content="浅色模式" />
+                    <ComboBoxItem Tag="dark" Content="深色模式(推荐)" />
+                </ComboBox>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</Page>

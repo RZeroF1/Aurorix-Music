@@ -428,7 +428,12 @@ public sealed class ThemeTokenHost : IDisposable
         {
             ThemeMaterial.Mica when environment.SupportsMica => ThemeMaterial.Mica,
             ThemeMaterial.Mica when environment.SupportsAcrylic => ThemeMaterial.Acrylic,
+            ThemeMaterial.MicaAlt when environment.SupportsMica => ThemeMaterial.MicaAlt,
+            ThemeMaterial.MicaAlt when environment.SupportsAcrylic => ThemeMaterial.Acrylic,
             ThemeMaterial.Acrylic when environment.SupportsAcrylic => ThemeMaterial.Acrylic,
+            ThemeMaterial.TransparentAcrylic when environment.SupportsAcrylic => ThemeMaterial.TransparentAcrylic,
+            ThemeMaterial.CustomAcrylic when environment.SupportsAcrylic => ThemeMaterial.CustomAcrylic,
+            ThemeMaterial.None => ThemeMaterial.None,
             ThemeMaterial.Glass when environment.SupportsGlass => ThemeMaterial.Glass,
             ThemeMaterial.Glass when environment.SupportsAcrylic => ThemeMaterial.Acrylic,
             _ => ThemeMaterial.Solid,

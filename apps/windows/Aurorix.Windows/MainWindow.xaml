@@ -2,11 +2,461 @@
 <Window
     x:Class="Aurorix.Windows.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:navigation="using:Aurorix.Windows.Navigation"
+    Title="Aurorix Music">
 
-    <Window.SystemBackdrop>
-        <MicaBackdrop />
-    </Window.SystemBackdrop>
+    <Grid x:Name="RootGrid" Background="Transparent">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-    <Grid Background="Transparent" />
+        <Grid
+            x:Name="ThemeSurface"
+            Grid.RowSpan="2"
+            Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+            IsHitTestVisible="False"
+            Opacity="0.06">
+            <Grid.BackgroundTransition>
+                <BrushTransition Duration="0:0:0.2" />
+            </Grid.BackgroundTransition>
+        </Grid>
+
+        <Grid Grid.Row="0">
+            <TitleBar
+                x:Name="AppTitleBar"
+                Title=""
+                Background="Transparent">
+                <TitleBar.Resources>
+                    <!-- The custom header already occupies the space before
+                         the native caption buttons. -->
+                    <x:Double x:Key="TitleBarMinDragRegionWidth">0</x:Double>
+                    <!-- Keep app-owned title-bar actions together. BasedOn supplies
+                         theme-aware PointerOver/Pressed states without changing
+                         buttons elsewhere in the application. -->
+                    <Style
+                        x:Key="TitleBarActionButtonStyle"
+                        TargetType="Button"
+                        BasedOn="{StaticResource SubtleButtonStyle}">
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="CornerRadius" Value="0" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                        <Setter Property="VerticalContentAlignment" Value="Center" />
+                    </Style>
+                </TitleBar.Resources>
+            <TitleBar.LeftHeader>
+                    <StackPanel
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        Margin="25,0,0,0"
+                        AutomationProperties.Name="Aurorix Music">
+                        <Image
+                            Width="24"
+                            Height="24"
+                            Source="/Assets/Square44x44Logo.scale-200.png"
+                            Stretch="UniformToFill"
+                            AutomationProperties.Name="应用程序图标占位符" />
+                        <TextBlock
+                            x:Name="AppTitleText"
+                            Text="Aurorix Music"
+                            Margin="16,0,0,0"
+                            FontSize="18"
+                            FontWeight="SemiBold"
+                            Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                            VerticalAlignment="Center" />
+                    </StackPanel>
+            </TitleBar.LeftHeader>
+
+            <TitleBar.RightHeader>
+                    <!-- Keep a one-DIP client gap so native caption hover receives
+                         a real leave boundary before app-owned controls. -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="1" />
+                        </Grid.ColumnDefinitions>
+                    <StackPanel
+                        Grid.Column="0"
+                        Orientation="Horizontal"
+                        Spacing="4">
+                    <!-- App-owned action cell: sized to align with the native caption buttons. -->
+                    <Button
+                        x:Name="AccountButton"
+                        Width="46"
+                        Height="48"
+                        Style="{StaticResource TitleBarActionButtonStyle}"
+                        ToolTipService.ToolTip="账户"
+                        AutomationProperties.Name="账户">
+                        <FontIcon
+                            x:Name="AccountIcon"
+                            FontFamily="Segoe Fluent Icons"
+                            Glyph="&#xE77B;"
+                            Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                            FontSize="16" />
+                    </Button>
+                    <!-- App-owned action cell: the zero radius keeps the hover surface square. -->
+                    <Button
+                        x:Name="NotificationsButton"
+                        Width="46"
+                        Height="48"
+                        Style="{StaticResource TitleBarActionButtonStyle}"
+                        ToolTipService.ToolTip="通知"
+                        AutomationProperties.Name="通知">
+                        <FontIcon
+                            x:Name="NotificationsIcon"
+                            FontFamily="Segoe Fluent Icons"
+                            Glyph="&#xE7E7;"
+                            Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                            FontSize="16" />
+                    </Button>
+                    <!-- App-owned action cell: full title-bar height avoids an inset hover rectangle. -->
+                    <Button
+                        x:Name="ThemeButton"
+                        Width="46"
+                        Height="48"
+                        Style="{StaticResource TitleBarActionButtonStyle}"
+                        ToolTipService.ToolTip="主题"
+                        AutomationProperties.Name="主题">
+                        <FontIcon
+                            x:Name="ThemeIcon"
+                            FontFamily="Segoe Fluent Icons"
+                            Glyph="&#xE790;"
+                            Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                            FontSize="16" />
+                    </Button>
+                </StackPanel>
+                <!-- This is an actual element, so MainWindow can mark the
+                     one-DIP boundary as non-client input passthrough. -->
+                <Border
+                    x:Name="TitleBarNativeHoverGap"
+                    Grid.Column="1"
+                    Width="1"
+                    Height="48"
+                    Background="Transparent"
+                    IsHitTestVisible="True" />
+                    </Grid>
+            </TitleBar.RightHeader>
+            </TitleBar>
+
+            <!-- TitleBar.Content is centered in the remaining template
+                 column. This overlay is centered against the whole window. -->
+            <AutoSuggestBox
+                x:Name="GlobalSearchBox"
+                Width="360"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="Transparent"
+                Canvas.ZIndex="1"
+                PlaceholderText="搜索音乐、专辑或艺术家"
+                QueryIcon="Find"
+                AutomationProperties.Name="全局搜索" />
+        </Grid>
+
+        <Grid Grid.Row="1">
+            <Frame
+                x:Name="ContentFrame"
+                Margin="72,12,12,148"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                Canvas.ZIndex="1"
+                IsHitTestVisible="True"
+                AutomationProperties.Name="页面内容" />
+
+            <Border
+                x:Name="PlaybackControlBar"
+                Height="120"
+                Margin="72,0,12,12"
+                Padding="16,8,16,12"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Bottom"
+                Background="Transparent"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                Canvas.ZIndex="4"
+                CornerRadius="14"
+                AutomationProperties.Name="播放控制栏">
+                <Border.Resources>
+                    <Style
+                        TargetType="Button"
+                        BasedOn="{StaticResource SubtleButtonStyle}" />
+                </Border.Resources>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="332" />
+                        <ColumnDefinition Width="1" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- The track entry owns the left side of both rows. -->
+                    <Button
+                        x:Name="CurrentTrackButton"
+                        Grid.Column="0"
+                        Width="316"
+                        Height="84"
+                        Padding="0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Click="CurrentTrackButton_Click"
+                        CornerRadius="10"
+                        HorizontalContentAlignment="Stretch"
+                        VerticalAlignment="Center"
+                        ToolTipService.ToolTip="打开沉浸式播放页"
+                        AutomationProperties.Name="打开沉浸式播放页">
+                        <Grid VerticalAlignment="Center">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="72" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border
+                                Width="72"
+                                Height="72"
+                                VerticalAlignment="Center"
+                                Background="{ThemeResource ControlFillColorSecondaryBrush}"
+                                CornerRadius="8">
+                                <Image
+                                    Source="/Assets/Square150x150Logo.scale-200.png"
+                                    Stretch="UniformToFill"
+                                    AutomationProperties.Name="专辑封面占位符" />
+                            </Border>
+                            <StackPanel
+                                Grid.Column="1"
+                                Margin="16,0,12,0"
+                                VerticalAlignment="Center">
+                                <TextBlock
+                                    Text="未播放"
+                                    FontSize="16"
+                                    FontWeight="SemiBold"
+                                    TextTrimming="CharacterEllipsis" />
+                                <TextBlock
+                                    Margin="0,3,0,0"
+                                    Text="作曲人：--"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    FontSize="13"
+                                    TextTrimming="CharacterEllipsis" />
+                                <TextBlock
+                                    Margin="0,3,0,0"
+                                    Text="音质：--"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    FontSize="12"
+                                    TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                        </Grid>
+                    </Button>
+
+                    <Border
+                        Grid.Column="1"
+                        Width="1"
+                        Margin="0,8,0,8"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Stretch"
+                        Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+                        AutomationProperties.Name="播放栏分隔线" />
+
+                    <Grid
+                        Grid.Column="2"
+                        Margin="16,0,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Progress starts after the track information area. -->
+                        <Grid Grid.Row="0" Margin="0,0,0,2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0" Margin="0,0,0,1">
+                                <TextBlock
+                                    HorizontalAlignment="Left"
+                                    Text="00:00"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    FontSize="11" />
+                                <TextBlock
+                                    HorizontalAlignment="Right"
+                                    Text="00:00"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    FontSize="11" />
+                            </Grid>
+                            <Slider
+                                x:Name="PlaybackProgressSlider"
+                                Grid.Row="1"
+                                Minimum="0"
+                                Maximum="1"
+                                Value="0"
+                                Margin="0"
+                                StepFrequency="0.01"
+                                ValueChanged="PlaybackProgressSlider_ValueChanged"
+                                AutomationProperties.Name="播放进度" />
+                        </Grid>
+
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="180" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel
+                                Grid.Column="0"
+                                Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Spacing="14">
+                                <Button
+                                    x:Name="PlaybackModeButton"
+                                    Width="40"
+                                    Height="40"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Click="PlaybackModeButton_Click"
+                                    ToolTipService.ToolTip="列表循环"
+                                    AutomationProperties.Name="播放模式：列表循环">
+                                    <SymbolIcon
+                                        x:Name="PlaybackModeIcon"
+                                        Symbol="RepeatAll" />
+                                </Button>
+                                <Button
+                                    x:Name="PreviousTrackButton"
+                                    Width="40"
+                                    Height="40"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Click="PreviousTrackButton_Click"
+                                    ToolTipService.ToolTip="上一首"
+                                    AutomationProperties.Name="上一首">
+                                    <SymbolIcon Symbol="Previous" />
+                                </Button>
+                                <Button
+                                    x:Name="PlayPauseButton"
+                                    Width="44"
+                                    Height="44"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                                    BorderThickness="2"
+                                    Click="PlayPauseButton_Click"
+                                    CornerRadius="22"
+                                    ToolTipService.ToolTip="播放"
+                                    AutomationProperties.Name="播放">
+                                    <SymbolIcon
+                                        x:Name="PlayPauseIcon"
+                                        Symbol="Play"
+                                        Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
+                                </Button>
+                                <Button
+                                    x:Name="NextTrackButton"
+                                    Width="40"
+                                    Height="40"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Click="NextTrackButton_Click"
+                                    ToolTipService.ToolTip="下一首"
+                                    AutomationProperties.Name="下一首">
+                                    <SymbolIcon Symbol="Next" />
+                                </Button>
+                                <Button
+                                    x:Name="FavoriteButton"
+                                    Width="40"
+                                    Height="40"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Click="FavoriteButton_Click"
+                                    ToolTipService.ToolTip="添加到我喜欢歌单"
+                                    AutomationProperties.Name="添加到我喜欢歌单">
+                                    <FontIcon
+                                        x:Name="FavoriteIcon"
+                                        FontFamily="Segoe Fluent Icons"
+                                        Glyph="&#xE006;" />
+                                </Button>
+                            </StackPanel>
+
+                            <!-- Output controls stay at the far right. -->
+                            <StackPanel
+                                Grid.Column="1"
+                                Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Spacing="8"
+                                VerticalAlignment="Center">
+                                <Button
+                                    x:Name="VolumeButton"
+                                    Width="36"
+                                    Height="36"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    ToolTipService.ToolTip="音量"
+                                    AutomationProperties.Name="音量">
+                                    <FontIcon
+                                        x:Name="VolumeIcon"
+                                        FontFamily="Segoe Fluent Icons"
+                                        Glyph="&#xE995;" />
+                                    <Button.Flyout>
+                                        <Flyout Placement="Top">
+                                            <Border Padding="12,12,12,8">
+                                                <Slider
+                                                    x:Name="VolumeSlider"
+                                                    Width="32"
+                                                    Height="128"
+                                                    Minimum="0"
+                                                    Maximum="1"
+                                                    Value="0.7"
+                                                    StepFrequency="0.01"
+                                                    Orientation="Vertical"
+                                                    ValueChanged="VolumeSlider_ValueChanged"
+                                                    AutomationProperties.Name="音量" />
+                                            </Border>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                                <Button
+                                    x:Name="EqualizerButton"
+                                    Width="36"
+                                    Height="36"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Click="EqualizerButton_Click"
+                                    ToolTipService.ToolTip="均衡器"
+                                    AutomationProperties.Name="均衡器">
+                                    <FontIcon
+                                        FontFamily="Segoe Fluent Icons"
+                                        Glyph="&#xE9E9;" />
+                                </Button>
+                                <Button
+                                    x:Name="OutputDeviceButton"
+                                    Width="36"
+                                    Height="36"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Click="OutputDeviceButton_Click"
+                                    ToolTipService.ToolTip="播放设备"
+                                    AutomationProperties.Name="播放设备">
+                                    <FontIcon
+                                        FontFamily="Segoe Fluent Icons"
+                                        Glyph="&#xE7F4;" />
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- Keep navigation above the playback surface so an expanded
+                 pane owns pointer input in its visible area. -->
+            <navigation:FloatingNavigationView
+                x:Name="FloatingNavigationView"
+                HorizontalAlignment="Left"
+                Width="344"
+                PaneCornerRadius="8"
+                Canvas.ZIndex="5" />
+        </Grid>
+    </Grid>
 </Window>
