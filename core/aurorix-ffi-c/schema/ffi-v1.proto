@@ -39,3 +39,163 @@ message ExtensionRequestV1 {
   string schema_version = 2;
   bytes payload = 3;
 }
+
+// Typed Home projection carried by ExtensionRequestV1(namespace="aurorix.home",
+// schema_version="1"). The Rust mapping is intentionally reviewed and
+// hand-written because generated bindings are not checked into this repo.
+message HomeSnapshotV1 {
+  uint32 projection_version = 1;
+  uint64 observed_event_sequence = 2;
+  HomeSourceMetadataV1 source = 3;
+  HomeStatusV1 status = 4;
+  repeated HomeSectionV1 sections = 5;
+  repeated HomeQuickEntryV1 quick_entries = 6;
+  HomeRecommendationSetV1 discover = 7;
+}
+
+enum HomeStateV1 {
+  HOME_STATE_UNSPECIFIED = 0;
+  HOME_STATE_READY = 1;
+  HOME_STATE_LOADING = 2;
+  HOME_STATE_EMPTY = 3;
+  HOME_STATE_OFFLINE = 4;
+  HOME_STATE_UNAVAILABLE = 5;
+}
+
+enum HomeSectionKindV1 {
+  HOME_SECTION_UNSPECIFIED = 0;
+  HOME_SECTION_RECENTLY_PLAYED = 1;
+  HOME_SECTION_RECENTLY_ADDED = 2;
+  HOME_SECTION_FAVORITES = 3;
+  HOME_SECTION_CONTINUE_PLAYBACK = 4;
+}
+
+enum HomeSourceKindV1 {
+  HOME_SOURCE_UNSPECIFIED = 0;
+  HOME_SOURCE_LOCAL = 1;
+  HOME_SOURCE_PROVIDER = 2;
+  HOME_SOURCE_EXTENSION = 3;
+  HOME_SOURCE_SYSTEM = 4;
+}
+
+enum HomeSourceStatusV1 {
+  HOME_SOURCE_STATUS_UNSPECIFIED = 0;
+  HOME_SOURCE_STATUS_AVAILABLE = 1;
+  HOME_SOURCE_STATUS_OFFLINE = 2;
+  HOME_SOURCE_STATUS_TIMED_OUT = 3;
+  HOME_SOURCE_STATUS_UNAVAILABLE = 4;
+}
+
+message HomeStatusV1 {
+  HomeStateV1 state = 1;
+  optional string message = 2;
+  bool retryable = 3;
+}
+
+message HomeSourceMetadataV1 {
+  HomeSourceKindV1 kind = 1;
+  string source_id = 2;
+  optional string display_name = 3;
+  HomeSourceStatusV1 status = 4;
+  optional string detail = 5;
+}
+
+message HomeCardV1 {
+  string card_id = 1;
+  string title = 2;
+  optional string subtitle = 3;
+  optional string artist = 4;
+  optional string album = 5;
+  optional string artwork_key = 6;
+  optional string quality_label = 7;
+  optional uint32 duration_ms = 8;
+  optional string route_id = 9;
+  bool is_favorite = 10;
+  HomeSourceMetadataV1 source = 11;
+  HomeStatusV1 status = 12;
+}
+
+message HomeSectionV1 {
+  HomeSectionKindV1 kind = 1;
+  HomeSourceMetadataV1 source = 2;
+  HomeStatusV1 status = 3;
+  repeated HomeCardV1 cards = 4;
+}
+
+message HomeQuickEntryV1 {
+  string card_id = 1;
+  string title = 2;
+  optional string subtitle = 3;
+  optional string icon_ref = 4;
+  string route_id = 5;
+  optional uint32 count = 6;
+  bool customizable = 7;
+  HomeSourceMetadataV1 source = 8;
+  HomeStatusV1 status = 9;
+}
+
+message HomeRecommendationV1 {
+  string card_id = 1;
+  string title = 2;
+  optional string description = 3;
+  optional string artwork_key = 4;
+  string route_id = 5;
+  HomeSourceMetadataV1 source = 6;
+  HomeStatusV1 status = 7;
+}
+
+message HomeRecommendationSetV1 {
+  HomeSourceMetadataV1 source = 1;
+  HomeStatusV1 status = 2;
+  repeated HomeRecommendationV1 cards = 3;
+}
+
+message HomeCommandRequestV1 {
+  uint32 command_version = 1;
+  string command_id = 2;
+  uint64 observed_event_sequence = 3;
+
+  oneof command {
+    HomeOpenQuickEntryV1 open_quick_entry = 10;
+    HomePlayTrackV1 play_track = 11;
+    HomeOpenRecommendationV1 open_recommendation = 12;
+    HomeOpenAllRecentV1 open_all_recent = 13;
+    HomeCustomizeV1 customize_home = 14;
+    HomeSearchV1 search = 15;
+    HomeToggleFavoriteV1 toggle_favorite = 16;
+    HomeOpenExtensionV1 open_extension = 17;
+  }
+}
+
+message HomeOpenQuickEntryV1 {
+  string card_id = 1;
+  string route_id = 2;
+}
+
+message HomePlayTrackV1 {
+  string card_id = 1;
+}
+
+message HomeOpenRecommendationV1 {
+  string card_id = 1;
+  string route_id = 2;
+}
+
+message HomeOpenAllRecentV1 {
+  string section_id = 1;
+}
+
+message HomeCustomizeV1 {}
+
+message HomeSearchV1 {
+  string query = 1;
+}
+
+message HomeToggleFavoriteV1 {
+  string card_id = 1;
+}
+
+message HomeOpenExtensionV1 {
+  string card_id = 1;
+  string route_id = 2;
+}

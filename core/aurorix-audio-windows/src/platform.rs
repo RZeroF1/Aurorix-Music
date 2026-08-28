@@ -1,19 +1,26 @@
-//! Windows x64 COM/WASAPI implementation.
+//! Windows x64 COM/WASAPI Shared and Exclusive implementation.
 
 use std::ptr;
 
-use aurorix_audio::format::{AudioFormat, FormatError, SampleFormat};
+use aurorix_audio::{
+    format::{AudioFormat, FormatError, SampleFormat},
+    output_report::{
+        ChannelMappingStatus, FormatConversionStatus, OutputObservation, OutputRequest,
+        PlaybackRate, ResamplingStatus, Volume,
+    },
+};
 use windows::{
     Win32::{
         Foundation::{CloseHandle, S_FALSE, S_OK, WAIT_FAILED, WAIT_OBJECT_0},
         Media::{
             Audio::{
-                AUDCLNT_E_DEVICE_INVALIDATED, AUDCLNT_SHAREMODE_SHARED,
-                AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM, AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-                AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, DEVICE_STATE, DEVICE_STATE_ACTIVE,
-                DEVICE_STATE_DISABLED, DEVICE_STATE_NOTPRESENT, DEVICE_STATE_UNPLUGGED,
-                IAudioClient, IAudioRenderClient, IMMDevice, IMMDeviceEnumerator,
-                MMDeviceEnumerator, WAVE_FORMAT_PCM, WAVEFORMATEX, WAVEFORMATEXTENSIBLE,
+                AUDCLNT_E_DEVICE_INVALIDATED, AUDCLNT_SHAREMODE_EXCLUSIVE,
+                AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
+                AUDCLNT_STREAMFLAGS_EVENTCALLBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
+                DEVICE_STATE, DEVICE_STATE_ACTIVE, DEVICE_STATE_DISABLED, DEVICE_STATE_NOTPRESENT,
+                DEVICE_STATE_UNPLUGGED, IAudioClient, IAudioRenderClient, IMMDevice,
+                IMMDeviceEnumerator, MMDeviceEnumerator, WAVE_FORMAT_PCM, WAVEFORMATEX,
+                WAVEFORMATEXTENSIBLE,
             },
             KernelStreaming::WAVE_FORMAT_EXTENSIBLE,
             Multimedia::WAVE_FORMAT_IEEE_FLOAT,
@@ -31,8 +38,10 @@ use windows::{
 
 use crate::{
     DeviceEnumerationError, DeviceId, DeviceInfo, DeviceOperation, DeviceSelector, DeviceState,
-    FallbackPolicy, OutputFallback, RenderBackendError, RenderEvent, RenderOperation, SharedOutput,
-    SharedOutputConfig, SharedOutputError, SharedRenderBackend,
+    ExclusiveBackendFactory, ExclusiveFormatSupport, ExclusiveOpenError, ExclusiveOpenOutput,
+    ExclusiveOutputConfig, ExclusiveOutputError, FallbackPolicy, OutputFallback,
+    RenderBackendError, RenderEvent, RenderOperation, SharedOutput, SharedOutputConfig,
+    SharedOutputError, SharedRenderBackend, open_exclusive_with_shared_fallback,
 };
 
 const PCM_SUBTYPE: GUID = GUID::from_u128(0x00000001_0000_0010_8000_00aa00389b71);
@@ -286,13 +295,13 @@ pub fn enumerate_devices() -> Result<Vec<DeviceInfo>, DeviceEnumerationError> {
 pub fn open_shared(
     config: &SharedOutputConfig,
 ) -> Result<SharedOutput<WasapiSharedBackend>, SharedOutputError> {
-    let mut enumerator =
-        WasapiDeviceEnumerator::new().map_err(|error| map_enumerator_error(&error))?;
+    let mut enumerator = WasapiDeviceEnumerator::new()
+        .map_err(|error| map_enumerator_error(&error, config.fallback_policy()))?;
     let selected = match config.selector() {
         DeviceSelector::Default => enumerator.default_device(),
         DeviceSelector::Id(id) => enumerator.device(id),
     }
-    .map_err(|error| map_enumerator_error(&error))?;
+    .map_err(|error| map_enumerator_error(&error, config.fallback_policy()))?;
     if selected.state() != DeviceState::Active {
         let reason = match selected.state() {
             DeviceState::Disabled => crate::OutputUnavailableReason::DeviceDisabled,
@@ -310,11 +319,50 @@ pub fn open_shared(
         selected,
         config.request(),
         config.period_frames(),
+        config.fallback_policy(),
     )?;
     SharedOutput::from_backend(config, backend)
 }
 
-fn map_enumerator_error(error: &DeviceEnumerationError) -> SharedOutputError {
+/// Opens an event-driven WASAPI Exclusive endpoint, retrying in Shared mode
+/// only when the configured policy permits the typed fallback.
+///
+/// This is setup/control-plane work. Both variants return the same generic
+/// render boundary, so no mode-specific allocation or blocking is introduced
+/// into the realtime callback.
+///
+/// # Errors
+///
+/// Returns [`ExclusiveOpenError::Exclusive`] when Exclusive fails without an
+/// allowed retry, or [`ExclusiveOpenError::SharedFallback`] when Shared retry
+/// setup also fails.
+pub fn open_exclusive(
+    config: &ExclusiveOutputConfig,
+) -> Result<ExclusiveOpenOutput<WasapiExclusiveBackend, WasapiSharedBackend>, ExclusiveOpenError> {
+    let mut factory = match WasapiExclusiveFactory::new(config) {
+        Ok(factory) => factory,
+        Err(error) => return open_shared_for_exclusive_error(config, error),
+    };
+    open_exclusive_with_shared_fallback(&mut factory, config)
+}
+
+fn open_shared_for_exclusive_error(
+    config: &ExclusiveOutputConfig,
+    exclusive: ExclusiveOutputError,
+) -> Result<ExclusiveOpenOutput<WasapiExclusiveBackend, WasapiSharedBackend>, ExclusiveOpenError> {
+    if exclusive.fallback() != Some(OutputFallback::SharedMode) {
+        return Err(ExclusiveOpenError::Exclusive(exclusive));
+    }
+    match open_shared(&config.shared_config()) {
+        Ok(output) => Ok(ExclusiveOpenOutput::SharedFallback(output)),
+        Err(shared) => Err(ExclusiveOpenError::SharedFallback { exclusive, shared }),
+    }
+}
+
+fn map_enumerator_error(
+    error: &DeviceEnumerationError,
+    policy: FallbackPolicy,
+) -> SharedOutputError {
     match error {
         DeviceEnumerationError::BackendUnavailable { .. }
         | DeviceEnumerationError::Api {
@@ -331,7 +379,7 @@ fn map_enumerator_error(error: &DeviceEnumerationError) -> SharedOutputError {
         DeviceEnumerationError::Api { hresult, .. } => SharedOutputError::Backend {
             operation: RenderOperation::NegotiateFormat,
             hresult: Some(*hresult),
-            fallback: Some(OutputFallback::DefaultDevice),
+            fallback: fallback_for(policy, OutputFallback::DefaultDevice),
         },
         DeviceEnumerationError::InvalidDeviceId => {
             SharedOutputError::InvalidConfiguration { field: "device id" }
@@ -344,6 +392,54 @@ fn fallback_for(
     fallback: crate::OutputFallback,
 ) -> Option<crate::OutputFallback> {
     matches!(policy, FallbackPolicy::DefaultDevice).then_some(fallback)
+}
+
+fn exclusive_fallback_for(
+    policy: FallbackPolicy,
+    fallback: OutputFallback,
+) -> Option<OutputFallback> {
+    matches!(policy, FallbackPolicy::DefaultDevice).then_some(fallback)
+}
+
+fn map_exclusive_enumerator_error(
+    error: &DeviceEnumerationError,
+    policy: FallbackPolicy,
+) -> ExclusiveOutputError {
+    let fallback = exclusive_fallback_for(policy, OutputFallback::SharedMode);
+    match error {
+        DeviceEnumerationError::BackendUnavailable { .. }
+        | DeviceEnumerationError::Api {
+            operation: DeviceOperation::InitializeCom,
+            ..
+        }
+        | DeviceEnumerationError::Api {
+            operation: DeviceOperation::CreateEnumerator,
+            ..
+        } => ExclusiveOutputError::Unavailable {
+            reason: crate::OutputUnavailableReason::BackendUnavailable,
+            fallback,
+        },
+        DeviceEnumerationError::Api { hresult, .. } => ExclusiveOutputError::Backend {
+            operation: RenderOperation::NegotiateFormat,
+            hresult: Some(*hresult),
+            fallback,
+        },
+        DeviceEnumerationError::InvalidDeviceId => {
+            ExclusiveOutputError::InvalidConfiguration { field: "device id" }
+        }
+    }
+}
+
+fn activate_client(device: &DeviceInfo) -> Result<IAudioClient, i32> {
+    let wide: Vec<u16> = device.id().as_str().encode_utf16().chain(Some(0)).collect();
+    let enumerator = unsafe {
+        CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
+    }
+    .map_err(|error| error.code().0)?;
+    let device_handle =
+        unsafe { enumerator.GetDevice(PCWSTR(wide.as_ptr())) }.map_err(|error| error.code().0)?;
+    unsafe { device_handle.Activate::<IAudioClient>(CLSCTX_ALL, None) }
+        .map_err(|error| error.code().0)
 }
 
 fn device_state(state: DEVICE_STATE) -> DeviceState {
@@ -376,6 +472,161 @@ pub struct WasapiSharedBackend {
 /// The concrete Shared output returned by the Windows adapter.
 pub type WasapiSharedOutput = SharedOutput<WasapiSharedBackend>;
 
+/// A fully initialized WASAPI Exclusive endpoint. It uses the same prepared
+/// scratch/render boundary as [`WasapiSharedBackend`].
+#[derive(Debug)]
+pub struct WasapiExclusiveBackend {
+    _apartment: ComApartment,
+    client: IAudioClient,
+    render_client: IAudioRenderClient,
+    event: EventHandle,
+    device: DeviceInfo,
+    format: AudioFormat,
+    buffer_frames: usize,
+    period_frames: usize,
+    latency_frames: Option<u64>,
+}
+
+/// The concrete Exclusive output returned by the Windows adapter.
+pub type WasapiExclusiveOutput = SharedOutput<WasapiExclusiveBackend>;
+
+/// The control-plane factory for a selected Windows endpoint.
+#[derive(Debug)]
+struct WasapiExclusiveFactory {
+    apartment: Option<ComApartment>,
+    device: DeviceInfo,
+    fallback_policy: FallbackPolicy,
+}
+
+impl WasapiExclusiveFactory {
+    fn new(config: &ExclusiveOutputConfig) -> Result<Self, ExclusiveOutputError> {
+        let mut enumerator = WasapiDeviceEnumerator::new()
+            .map_err(|error| map_exclusive_enumerator_error(&error, config.fallback_policy()))?;
+        let device = match config.selector() {
+            DeviceSelector::Default => enumerator.default_device(),
+            DeviceSelector::Id(id) => enumerator.device(id),
+        }
+        .map_err(|error| map_exclusive_enumerator_error(&error, config.fallback_policy()))?;
+        if device.state() != DeviceState::Active {
+            let reason = match device.state() {
+                DeviceState::Disabled => crate::OutputUnavailableReason::DeviceDisabled,
+                DeviceState::Unplugged => crate::OutputUnavailableReason::DeviceUnplugged,
+                DeviceState::NotPresent => crate::OutputUnavailableReason::DeviceRemoved,
+                DeviceState::Active => unreachable!(),
+            };
+            return Err(ExclusiveOutputError::Unavailable {
+                reason,
+                fallback: exclusive_fallback_for(
+                    config.fallback_policy(),
+                    OutputFallback::SharedMode,
+                ),
+            });
+        }
+        Ok(Self {
+            apartment: Some(enumerator.take_apartment()),
+            device,
+            fallback_policy: config.fallback_policy(),
+        })
+    }
+
+    fn take_apartment(&mut self) -> ComApartment {
+        self.apartment
+            .take()
+            .expect("WASAPI Exclusive apartment is present until activation")
+    }
+}
+
+impl ExclusiveBackendFactory for WasapiExclusiveFactory {
+    type ExclusiveBackend = WasapiExclusiveBackend;
+    type SharedBackend = WasapiSharedBackend;
+
+    fn exclusive_format_support(
+        &mut self,
+        requested: AudioFormat,
+    ) -> Result<ExclusiveFormatSupport, ExclusiveOutputError> {
+        let client =
+            activate_client(&self.device).map_err(|hresult| ExclusiveOutputError::Backend {
+                operation: RenderOperation::NegotiateFormat,
+                hresult: Some(hresult),
+                fallback: exclusive_fallback_for(self.fallback_policy, OutputFallback::SharedMode),
+            })?;
+        let requested_wave = wave_format(requested).map_err(|error| match error {
+            SharedOutputError::InvalidConfiguration { field } => {
+                ExclusiveOutputError::InvalidConfiguration { field }
+            }
+            _ => ExclusiveOutputError::InvalidConfiguration {
+                field: "audio format",
+            },
+        })?;
+        let support = unsafe {
+            client.IsFormatSupported(AUDCLNT_SHAREMODE_EXCLUSIVE, &raw const requested_wave, None)
+        };
+        if support == S_OK {
+            Ok(ExclusiveFormatSupport::Exact)
+        } else {
+            Err(ExclusiveOutputError::FormatNegotiation {
+                requested,
+                closest: None,
+                fallback: exclusive_fallback_for(self.fallback_policy, OutputFallback::SharedMode),
+            })
+        }
+    }
+
+    fn open_exclusive(
+        &mut self,
+        config: &ExclusiveOutputConfig,
+        negotiated_format: AudioFormat,
+    ) -> Result<WasapiExclusiveOutput, ExclusiveOutputError> {
+        let backend = WasapiExclusiveBackend::open(
+            self.take_apartment(),
+            self.device.clone(),
+            negotiated_format,
+            config.period_frames(),
+            config.fallback_policy(),
+        )?;
+        let shared_config = config.shared_config();
+        SharedOutput::from_backend(&shared_config, backend).map_err(|error| match error {
+            SharedOutputError::InvalidConfiguration { field } => {
+                ExclusiveOutputError::InvalidConfiguration { field }
+            }
+            SharedOutputError::Unavailable { reason, .. } => ExclusiveOutputError::Unavailable {
+                reason,
+                fallback: exclusive_fallback_for(
+                    config.fallback_policy(),
+                    OutputFallback::SharedMode,
+                ),
+            },
+            SharedOutputError::FormatNegotiation {
+                requested, closest, ..
+            } => ExclusiveOutputError::FormatNegotiation {
+                requested,
+                closest,
+                fallback: exclusive_fallback_for(
+                    config.fallback_policy(),
+                    OutputFallback::SharedMode,
+                ),
+            },
+            SharedOutputError::Backend {
+                operation, hresult, ..
+            } => ExclusiveOutputError::Backend {
+                operation,
+                hresult,
+                fallback: exclusive_fallback_for(
+                    config.fallback_policy(),
+                    OutputFallback::SharedMode,
+                ),
+            },
+        })
+    }
+
+    fn open_shared(
+        &mut self,
+        config: &SharedOutputConfig,
+    ) -> Result<WasapiSharedOutput, SharedOutputError> {
+        crate::open_shared(config)
+    }
+}
+
 impl WasapiSharedBackend {
     #[allow(clippy::too_many_lines)]
     fn open(
@@ -383,38 +634,13 @@ impl WasapiSharedBackend {
         device: DeviceInfo,
         request: aurorix_audio::output_report::OutputRequest,
         configured_period_frames: Option<usize>,
+        fallback_policy: FallbackPolicy,
     ) -> Result<Self, SharedOutputError> {
-        let client = unsafe {
-            // `IMMDevice::Activate` is only called after the endpoint has been
-            // resolved on the same MTA thread.
-            let device_handle = {
-                let wide: Vec<u16> = device.id().as_str().encode_utf16().chain(Some(0)).collect();
-                let enumerator = CoCreateInstance::<_, IMMDeviceEnumerator>(
-                    &MMDeviceEnumerator,
-                    None,
-                    CLSCTX_ALL,
-                )
-                .map_err(|error| SharedOutputError::Backend {
-                    operation: RenderOperation::Initialize,
-                    hresult: Some(error.code().0),
-                    fallback: Some(OutputFallback::DefaultDevice),
-                })?;
-                enumerator
-                    .GetDevice(PCWSTR(wide.as_ptr()))
-                    .map_err(|error| SharedOutputError::Backend {
-                        operation: RenderOperation::Initialize,
-                        hresult: Some(error.code().0),
-                        fallback: Some(OutputFallback::DefaultDevice),
-                    })?
-            };
-            device_handle
-                .Activate::<IAudioClient>(CLSCTX_ALL, None)
-                .map_err(|error| SharedOutputError::Backend {
-                    operation: RenderOperation::Initialize,
-                    hresult: Some(error.code().0),
-                    fallback: Some(OutputFallback::DefaultDevice),
-                })?
-        };
+        let client = activate_client(&device).map_err(|hresult| SharedOutputError::Backend {
+            operation: RenderOperation::Initialize,
+            hresult: Some(hresult),
+            fallback: fallback_for(fallback_policy, OutputFallback::DefaultDevice),
+        })?;
         let requested_format = request
             .requested_output_format()
             .unwrap_or(request.source_format());
@@ -435,7 +661,7 @@ impl WasapiSharedBackend {
                 SharedOutputError::FormatNegotiation {
                     requested: requested_format,
                     closest: None,
-                    fallback: Some(OutputFallback::SharedMixFormat),
+                    fallback: fallback_for(fallback_policy, OutputFallback::SharedMixFormat),
                 }
             })?;
             (parsed, closest.as_ptr())
@@ -444,14 +670,14 @@ impl WasapiSharedBackend {
                 SharedOutputError::Backend {
                     operation: RenderOperation::NegotiateFormat,
                     hresult: Some(error.code().0),
-                    fallback: Some(OutputFallback::SharedMixFormat),
+                    fallback: fallback_for(fallback_policy, OutputFallback::SharedMixFormat),
                 }
             })?);
             let parsed = parse_wave_format(mix.as_ptr()).map_err(|_| {
                 SharedOutputError::FormatNegotiation {
                     requested: requested_format,
                     closest: None,
-                    fallback: Some(OutputFallback::SharedMixFormat),
+                    fallback: fallback_for(fallback_policy, OutputFallback::SharedMixFormat),
                 }
             })?;
             (parsed, mix.as_ptr())
@@ -468,7 +694,7 @@ impl WasapiSharedBackend {
         .map_err(|error| SharedOutputError::Backend {
             operation: RenderOperation::Initialize,
             hresult: Some(error.code().0),
-            fallback: Some(OutputFallback::DefaultDevice),
+            fallback: fallback_for(fallback_policy, OutputFallback::DefaultDevice),
         })?;
         let requested_buffer_hns = configured_period_frames
             .map_or(default_period_hns, |frames| {
@@ -491,13 +717,13 @@ impl WasapiSharedBackend {
         .map_err(|error| SharedOutputError::Backend {
             operation: RenderOperation::Initialize,
             hresult: Some(error.code().0),
-            fallback: Some(OutputFallback::SharedMixFormat),
+            fallback: fallback_for(fallback_policy, OutputFallback::SharedMixFormat),
         })?;
         let buffer_frames =
             unsafe { client.GetBufferSize() }.map_err(|error| SharedOutputError::Backend {
                 operation: RenderOperation::Initialize,
                 hresult: Some(error.code().0),
-                fallback: Some(OutputFallback::DefaultDevice),
+                fallback: fallback_for(fallback_policy, OutputFallback::DefaultDevice),
             })? as usize;
         let period_frames = configured_period_frames
             .unwrap_or_else(|| {
@@ -517,7 +743,7 @@ impl WasapiSharedBackend {
                 SharedOutputError::Backend {
                     operation: RenderOperation::CreateEvent,
                     hresult: Some(error.code().0),
-                    fallback: Some(OutputFallback::DefaultDevice),
+                    fallback: fallback_for(fallback_policy, OutputFallback::DefaultDevice),
                 }
             })?;
         let event = EventHandle(event);
@@ -528,7 +754,7 @@ impl WasapiSharedBackend {
             SharedOutputError::Backend {
                 operation: RenderOperation::SetEventHandle,
                 hresult: Some(error.code().0),
-                fallback: Some(OutputFallback::DefaultDevice),
+                fallback: fallback_for(fallback_policy, OutputFallback::DefaultDevice),
             }
         })?;
         let render_client =
@@ -536,7 +762,7 @@ impl WasapiSharedBackend {
                 SharedOutputError::Backend {
                     operation: RenderOperation::Initialize,
                     hresult: Some(error.code().0),
-                    fallback: Some(OutputFallback::DefaultDevice),
+                    fallback: fallback_for(fallback_policy, OutputFallback::DefaultDevice),
                 }
             })?;
         Ok(Self {
@@ -550,6 +776,219 @@ impl WasapiSharedBackend {
             period_frames,
             latency_frames,
         })
+    }
+}
+
+impl WasapiExclusiveBackend {
+    #[allow(clippy::too_many_lines)]
+    fn open(
+        apartment: ComApartment,
+        device: DeviceInfo,
+        format: AudioFormat,
+        configured_period_frames: Option<usize>,
+        fallback_policy: FallbackPolicy,
+    ) -> Result<Self, ExclusiveOutputError> {
+        let client = activate_client(&device).map_err(|hresult| ExclusiveOutputError::Backend {
+            operation: RenderOperation::Initialize,
+            hresult: Some(hresult),
+            fallback: exclusive_fallback_for(fallback_policy, OutputFallback::SharedMode),
+        })?;
+        let wave = wave_format(format).map_err(|error| match error {
+            SharedOutputError::InvalidConfiguration { field } => {
+                ExclusiveOutputError::InvalidConfiguration { field }
+            }
+            _ => ExclusiveOutputError::InvalidConfiguration {
+                field: "audio format",
+            },
+        })?;
+        let mut default_period_hns = 0_i64;
+        let mut minimum_period_hns = 0_i64;
+        unsafe {
+            client.GetDevicePeriod(
+                Some(&raw mut default_period_hns),
+                Some(&raw mut minimum_period_hns),
+            )
+        }
+        .map_err(|error| ExclusiveOutputError::Backend {
+            operation: RenderOperation::Initialize,
+            hresult: Some(error.code().0),
+            fallback: exclusive_fallback_for(fallback_policy, OutputFallback::SharedMode),
+        })?;
+        let requested_period_hns = configured_period_frames
+            .map_or(default_period_hns, |frames| {
+                frames_to_hns(frames, format.sample_rate_hz())
+            })
+            .max(minimum_period_hns);
+        // Exclusive event-driven streams use the same nonzero buffer duration
+        // and periodicity; no Shared-mode AUTOCONVERTPCM flags are enabled.
+        unsafe {
+            client.Initialize(
+                AUDCLNT_SHAREMODE_EXCLUSIVE,
+                AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                requested_period_hns,
+                requested_period_hns,
+                &raw const wave,
+                None,
+            )
+        }
+        .map_err(|error| ExclusiveOutputError::Backend {
+            operation: RenderOperation::Initialize,
+            hresult: Some(error.code().0),
+            fallback: exclusive_fallback_for(fallback_policy, OutputFallback::SharedMode),
+        })?;
+        let buffer_frames =
+            unsafe { client.GetBufferSize() }.map_err(|error| ExclusiveOutputError::Backend {
+                operation: RenderOperation::Initialize,
+                hresult: Some(error.code().0),
+                fallback: exclusive_fallback_for(fallback_policy, OutputFallback::SharedMode),
+            })? as usize;
+        let period_frames = configured_period_frames
+            .unwrap_or_else(|| {
+                usize::try_from(hns_to_frames(default_period_hns, format.sample_rate_hz()))
+                    .unwrap_or(usize::MAX)
+            })
+            .max(1)
+            .min(buffer_frames.max(1));
+        let latency_frames = unsafe { client.GetStreamLatency() }
+            .ok()
+            .map(|hns| hns_to_frames(hns, format.sample_rate_hz()));
+        let event =
+            unsafe { CreateEventW(None, false, false, PCWSTR::null()) }.map_err(|error| {
+                ExclusiveOutputError::Backend {
+                    operation: RenderOperation::CreateEvent,
+                    hresult: Some(error.code().0),
+                    fallback: exclusive_fallback_for(fallback_policy, OutputFallback::SharedMode),
+                }
+            })?;
+        let event = EventHandle(event);
+        unsafe { client.SetEventHandle(event.0) }.map_err(|error| {
+            let _ = event;
+            ExclusiveOutputError::Backend {
+                operation: RenderOperation::SetEventHandle,
+                hresult: Some(error.code().0),
+                fallback: exclusive_fallback_for(fallback_policy, OutputFallback::SharedMode),
+            }
+        })?;
+        let render_client =
+            unsafe { client.GetService::<IAudioRenderClient>() }.map_err(|error| {
+                ExclusiveOutputError::Backend {
+                    operation: RenderOperation::Initialize,
+                    hresult: Some(error.code().0),
+                    fallback: exclusive_fallback_for(fallback_policy, OutputFallback::SharedMode),
+                }
+            })?;
+        Ok(Self {
+            _apartment: apartment,
+            client,
+            render_client,
+            event,
+            device,
+            format,
+            buffer_frames,
+            period_frames,
+            latency_frames,
+        })
+    }
+}
+
+impl SharedRenderBackend for WasapiExclusiveBackend {
+    fn device(&self) -> &DeviceInfo {
+        &self.device
+    }
+
+    fn negotiated_format(&self) -> AudioFormat {
+        self.format
+    }
+
+    fn buffer_size_frames(&self) -> usize {
+        self.buffer_frames
+    }
+
+    fn period_frames(&self) -> usize {
+        self.period_frames
+    }
+
+    fn estimated_latency_frames(&self) -> Option<u64> {
+        self.latency_frames
+    }
+
+    fn output_observation(&self, request: OutputRequest) -> OutputObservation {
+        let source = request.source_format();
+        let conversion = if source.sample_format() == self.format.sample_format() {
+            FormatConversionStatus::NotApplied
+        } else {
+            FormatConversionStatus::Applied
+        };
+        let resampling = if source.sample_rate_hz() == self.format.sample_rate_hz() {
+            ResamplingStatus::NotApplied
+        } else {
+            ResamplingStatus::Applied
+        };
+        let mapping = if source.channels() == self.format.channels() {
+            ChannelMappingStatus::Identity
+        } else {
+            ChannelMappingStatus::Remixed
+        };
+        OutputObservation::new(
+            Some(self.format),
+            Some(PlaybackRate::NORMAL),
+            Some(Volume::UNITY),
+            self.latency_frames,
+            conversion,
+            resampling,
+            mapping,
+            Some(false),
+            Some(false),
+        )
+    }
+
+    fn current_padding_frames(&mut self) -> Result<usize, RenderBackendError> {
+        unsafe { self.client.GetCurrentPadding() }
+            .map(|padding| padding as usize)
+            .map_err(|error| backend_error(RenderOperation::ReadPadding, error.code().0))
+    }
+
+    fn wait_for_event(&mut self) -> Result<RenderEvent, RenderBackendError> {
+        let result = unsafe { WaitForSingleObject(self.event.0, INFINITE) };
+        if result == WAIT_OBJECT_0 {
+            Ok(RenderEvent::Ready)
+        } else if result == WAIT_FAILED {
+            Err(RenderBackendError::Api {
+                operation: RenderOperation::WaitForEvent,
+                hresult: -1,
+            })
+        } else {
+            Ok(RenderEvent::Timeout)
+        }
+    }
+
+    fn start(&mut self) -> Result<(), RenderBackendError> {
+        unsafe { self.client.Start() }
+            .map_err(|error| backend_error(RenderOperation::Start, error.code().0))
+    }
+
+    fn stop(&mut self) -> Result<(), RenderBackendError> {
+        unsafe { self.client.Stop() }
+            .map_err(|error| backend_error(RenderOperation::Stop, error.code().0))
+    }
+
+    fn write_interleaved_f32(
+        &mut self,
+        frames: usize,
+        samples: &[f32],
+    ) -> Result<(), RenderBackendError> {
+        let expected_samples = frames
+            .checked_mul(usize::from(self.format.channels()))
+            .ok_or(RenderBackendError::InvalidBuffer)?;
+        if samples.len() != expected_samples || frames > self.buffer_frames {
+            return Err(RenderBackendError::InvalidBuffer);
+        }
+        let frames_u32 = u32::try_from(frames).map_err(|_| RenderBackendError::InvalidBuffer)?;
+        let data = unsafe { self.render_client.GetBuffer(frames_u32) }
+            .map_err(|error| backend_error(RenderOperation::AcquireBuffer, error.code().0))?;
+        unsafe { write_samples(data, self.format.sample_format(), samples) };
+        unsafe { self.render_client.ReleaseBuffer(frames_u32, 0) }
+            .map_err(|error| backend_error(RenderOperation::ReleaseBuffer, error.code().0))
     }
 }
 

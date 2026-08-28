@@ -1,6 +1,6 @@
 [package]
 name = "aurorix-audio-windows"
-description = "Windows x64 WASAPI Shared output adapter for Aurorix."
+description = "Windows x64 WASAPI Shared and Exclusive output adapter for Aurorix."
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true

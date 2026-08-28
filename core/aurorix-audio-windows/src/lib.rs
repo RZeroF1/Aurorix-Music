@@ -1,4 +1,4 @@
-//! Windows x64 WASAPI Shared output boundary.
+//! Windows x64 WASAPI Shared and Exclusive output boundary.
 //!
 //! The control plane owns device selection, format negotiation, and report
 //! construction. The render plane owns only a preallocated scratch buffer and
@@ -155,6 +155,8 @@ pub enum OutputFallback {
     DefaultDevice,
     /// Retry negotiation with the endpoint's shared mix format.
     SharedMixFormat,
+    /// Retry the same endpoint in WASAPI Shared mode.
+    SharedMode,
 }
 
 /// Whether a failed operation should advertise a fallback.
@@ -162,7 +164,7 @@ pub enum OutputFallback {
 pub enum FallbackPolicy {
     /// Do not offer an automatic fallback.
     Disabled,
-    /// Offer a default-device or shared-mix-format retry where applicable.
+    /// Offer a safe backend retry where applicable.
     #[default]
     DefaultDevice,
 }
@@ -232,6 +234,334 @@ impl SharedOutputConfig {
     #[must_use]
     pub const fn period_frames(&self) -> Option<usize> {
         self.period_frames
+    }
+}
+
+/// Exclusive-mode output configuration. The request and endpoint selection
+/// are shared with the existing Shared boundary; only the WASAPI stream mode
+/// differs. All fields are frozen before the event-driven renderer starts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExclusiveOutputConfig {
+    request: OutputRequest,
+    selector: DeviceSelector,
+    fallback_policy: FallbackPolicy,
+    period_frames: Option<usize>,
+}
+
+impl ExclusiveOutputConfig {
+    /// Creates Exclusive output configuration from the existing output request.
+    #[must_use]
+    pub const fn new(request: OutputRequest) -> Self {
+        Self {
+            request,
+            selector: DeviceSelector::Default,
+            fallback_policy: FallbackPolicy::DefaultDevice,
+            period_frames: None,
+        }
+    }
+
+    /// Selects one endpoint by its opaque identity.
+    #[must_use]
+    pub fn with_device(mut self, selector: DeviceSelector) -> Self {
+        self.selector = selector;
+        self
+    }
+
+    /// Sets the fallback policy.
+    #[must_use]
+    pub const fn with_fallback_policy(mut self, policy: FallbackPolicy) -> Self {
+        self.fallback_policy = policy;
+        self
+    }
+
+    /// Overrides the backend's preferred event period in frames.
+    #[must_use]
+    pub const fn with_period_frames(mut self, frames: Option<usize>) -> Self {
+        self.period_frames = frames;
+        self
+    }
+
+    /// Returns the output request.
+    #[must_use]
+    pub const fn request(&self) -> OutputRequest {
+        self.request
+    }
+
+    /// Returns the device selector.
+    #[must_use]
+    pub const fn selector(&self) -> &DeviceSelector {
+        &self.selector
+    }
+
+    /// Returns the fallback policy.
+    #[must_use]
+    pub const fn fallback_policy(&self) -> FallbackPolicy {
+        self.fallback_policy
+    }
+
+    /// Returns an explicitly configured period, if any.
+    #[must_use]
+    pub const fn period_frames(&self) -> Option<usize> {
+        self.period_frames
+    }
+
+    /// Builds the same-endpoint Shared configuration for an explicit retry.
+    #[must_use]
+    pub fn shared_config(&self) -> SharedOutputConfig {
+        SharedOutputConfig {
+            request: self.request,
+            selector: self.selector.clone(),
+            fallback_policy: self.fallback_policy,
+            period_frames: self.period_frames,
+        }
+    }
+}
+
+/// A typed failure from Exclusive setup. A Shared retry is only advertised
+/// when the configured fallback policy permits it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExclusiveOutputError {
+    /// A control-plane configuration value was invalid.
+    InvalidConfiguration { field: &'static str },
+    /// No endpoint can currently satisfy the operation.
+    Unavailable {
+        reason: OutputUnavailableReason,
+        fallback: Option<OutputFallback>,
+    },
+    /// The endpoint rejected the requested Exclusive format.
+    FormatNegotiation {
+        requested: AudioFormat,
+        closest: Option<AudioFormat>,
+        fallback: Option<OutputFallback>,
+    },
+    /// Exclusive initialization or runtime setup failed.
+    Backend {
+        operation: RenderOperation,
+        hresult: Option<i32>,
+        fallback: Option<OutputFallback>,
+    },
+}
+
+impl fmt::Display for ExclusiveOutputError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidConfiguration { field } => {
+                write!(formatter, "invalid Exclusive output configuration: {field}")
+            }
+            Self::Unavailable { reason, fallback } => {
+                write!(
+                    formatter,
+                    "Exclusive output unavailable: {reason:?} ({fallback:?})"
+                )
+            }
+            Self::FormatNegotiation {
+                requested,
+                closest,
+                fallback,
+            } => write!(
+                formatter,
+                "Exclusive format negotiation rejected {requested:?}, closest={closest:?}, fallback={fallback:?}"
+            ),
+            Self::Backend {
+                operation,
+                hresult,
+                fallback,
+            } => write!(
+                formatter,
+                "Exclusive backend {operation} failed ({hresult:?}), fallback={fallback:?}"
+            ),
+        }
+    }
+}
+
+impl Error for ExclusiveOutputError {}
+
+impl ExclusiveOutputError {
+    /// Returns the policy-provided retry, if one is safe to offer.
+    #[must_use]
+    pub const fn fallback(&self) -> Option<OutputFallback> {
+        match self {
+            Self::InvalidConfiguration { .. } => None,
+            Self::Unavailable { fallback, .. }
+            | Self::FormatNegotiation { fallback, .. }
+            | Self::Backend { fallback, .. } => *fallback,
+        }
+    }
+}
+
+/// Result of asking an endpoint whether an Exclusive format is usable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExclusiveFormatSupport {
+    /// The requested format is accepted exactly.
+    Exact,
+    /// The endpoint supplied a usable closest format.
+    ///
+    /// This is available to abstract backends. Native WASAPI Exclusive
+    /// negotiation accepts exact support only; Shared negotiation owns its
+    /// own closest/mix-format policy.
+    Closest(AudioFormat),
+    /// The endpoint cannot accept the requested format in Exclusive mode.
+    Unsupported,
+}
+
+/// Resolves the actual format for an Exclusive stream before backend creation.
+///
+/// A closest format is a successful negotiation, but the resulting output
+/// report will expose it separately from the requested format. Unsupported
+/// formats produce a typed Shared-mode retry only when policy allows it.
+///
+/// # Errors
+///
+/// Returns [`ExclusiveOutputError::FormatNegotiation`] when the endpoint does
+/// not accept the requested format.
+pub fn negotiate_exclusive_format(
+    request: OutputRequest,
+    support: ExclusiveFormatSupport,
+    fallback_policy: FallbackPolicy,
+) -> Result<AudioFormat, ExclusiveOutputError> {
+    let requested = request
+        .requested_output_format()
+        .unwrap_or(request.source_format());
+    match support {
+        ExclusiveFormatSupport::Exact => Ok(requested),
+        ExclusiveFormatSupport::Closest(format) => Ok(format),
+        ExclusiveFormatSupport::Unsupported => Err(ExclusiveOutputError::FormatNegotiation {
+            requested,
+            closest: None,
+            fallback: fallback_for(fallback_policy, OutputFallback::SharedMode),
+        }),
+    }
+}
+
+/// The output selected after an Exclusive attempt and optional Shared retry.
+#[derive(Debug)]
+pub enum ExclusiveOpenOutput<E: SharedRenderBackend, S: SharedRenderBackend> {
+    /// Exclusive mode was prepared successfully.
+    Exclusive(SharedOutput<E>),
+    /// Exclusive failed and the same request was prepared in Shared mode.
+    SharedFallback(SharedOutput<S>),
+}
+
+/// A failed Exclusive attempt and, when applicable, its failed Shared retry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExclusiveOpenError {
+    /// Exclusive failed without an allowed Shared retry.
+    Exclusive(ExclusiveOutputError),
+    /// Exclusive advertised Shared fallback, but the Shared attempt failed.
+    SharedFallback {
+        /// The original Exclusive failure.
+        exclusive: ExclusiveOutputError,
+        /// The typed Shared retry failure.
+        shared: SharedOutputError,
+    },
+}
+
+impl fmt::Display for ExclusiveOpenError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Exclusive(error) => write!(formatter, "Exclusive output failed: {error}"),
+            Self::SharedFallback { exclusive, shared } => write!(
+                formatter,
+                "Exclusive output failed ({exclusive}); Shared fallback failed ({shared})"
+            ),
+        }
+    }
+}
+
+impl Error for ExclusiveOpenError {}
+
+/// Control-plane factory used by the Windows adapter and deterministic fakes.
+///
+/// Every method runs before the event-driven render loop. Implementations must
+/// return a fully prepared [`SharedOutput`], so its render boundary remains
+/// the same for both stream modes.
+pub trait ExclusiveBackendFactory {
+    /// Fully negotiated Exclusive backend type.
+    type ExclusiveBackend: SharedRenderBackend;
+    /// Fully negotiated Shared backend type.
+    type SharedBackend: SharedRenderBackend;
+
+    /// Checks whether the requested format is exact, closest, or unsupported.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ExclusiveOutputError`] when the endpoint cannot be queried
+    /// or the requested format cannot be represented.
+    fn exclusive_format_support(
+        &mut self,
+        requested: AudioFormat,
+    ) -> Result<ExclusiveFormatSupport, ExclusiveOutputError>;
+
+    /// Opens a fully negotiated Exclusive backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ExclusiveOutputError`] when backend setup or report
+    /// preparation fails.
+    fn open_exclusive(
+        &mut self,
+        config: &ExclusiveOutputConfig,
+        negotiated_format: AudioFormat,
+    ) -> Result<SharedOutput<Self::ExclusiveBackend>, ExclusiveOutputError>;
+
+    /// Opens a fully negotiated Shared backend for an explicit fallback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SharedOutputError`] when Shared fallback setup fails.
+    fn open_shared(
+        &mut self,
+        config: &SharedOutputConfig,
+    ) -> Result<SharedOutput<Self::SharedBackend>, SharedOutputError>;
+}
+
+/// Opens Exclusive mode and performs the explicitly typed Shared fallback.
+///
+/// The fallback is attempted only for an error carrying
+/// [`OutputFallback::SharedMode`]. Disabled fallback policy therefore returns
+/// the original Exclusive error without invoking the Shared factory method.
+/// All work here is control-plane setup; the returned output uses the existing
+/// allocation-free [`SharedOutput::render_event`] boundary.
+///
+/// # Errors
+///
+/// Returns [`ExclusiveOpenError::Exclusive`] when Exclusive fails without an
+/// allowed retry, or [`ExclusiveOpenError::SharedFallback`] when the retry
+/// itself fails.
+pub fn open_exclusive_with_shared_fallback<F: ExclusiveBackendFactory>(
+    factory: &mut F,
+    config: &ExclusiveOutputConfig,
+) -> Result<ExclusiveOpenOutput<F::ExclusiveBackend, F::SharedBackend>, ExclusiveOpenError> {
+    let requested = config
+        .request()
+        .requested_output_format()
+        .unwrap_or(config.request().source_format());
+    let support = match factory.exclusive_format_support(requested) {
+        Ok(support) => support,
+        Err(error) => return open_shared_after_exclusive_failure(factory, config, error),
+    };
+    let negotiated =
+        match negotiate_exclusive_format(config.request(), support, config.fallback_policy()) {
+            Ok(format) => format,
+            Err(error) => return open_shared_after_exclusive_failure(factory, config, error),
+        };
+    match factory.open_exclusive(config, negotiated) {
+        Ok(output) => Ok(ExclusiveOpenOutput::Exclusive(output)),
+        Err(error) => open_shared_after_exclusive_failure(factory, config, error),
+    }
+}
+
+fn open_shared_after_exclusive_failure<F: ExclusiveBackendFactory>(
+    factory: &mut F,
+    config: &ExclusiveOutputConfig,
+    exclusive: ExclusiveOutputError,
+) -> Result<ExclusiveOpenOutput<F::ExclusiveBackend, F::SharedBackend>, ExclusiveOpenError> {
+    if exclusive.fallback() != Some(OutputFallback::SharedMode) {
+        return Err(ExclusiveOpenError::Exclusive(exclusive));
+    }
+    match factory.open_shared(&config.shared_config()) {
+        Ok(output) => Ok(ExclusiveOpenOutput::SharedFallback(output)),
+        Err(shared) => Err(ExclusiveOpenError::SharedFallback { exclusive, shared }),
     }
 }
 
@@ -520,6 +850,20 @@ pub trait SharedRenderBackend {
     /// Returns measured stream latency in output frames, when available.
     fn estimated_latency_frames(&self) -> Option<u64>;
 
+    /// Returns the complete control-plane observation for this output mode.
+    ///
+    /// The default preserves the existing Shared-mode evidence policy. An
+    /// Exclusive backend may override this to report that the system mixer
+    /// was bypassed, while still keeping all report construction off the
+    /// realtime render path.
+    fn output_observation(&self, request: OutputRequest) -> OutputObservation {
+        observation_for(
+            request,
+            self.negotiated_format(),
+            self.estimated_latency_frames(),
+        )
+    }
+
     /// Returns the current endpoint padding.
     ///
     /// # Errors
@@ -626,8 +970,7 @@ impl<B: SharedRenderBackend> SharedOutput<B> {
             },
         )?;
         let scratch = vec![0.0; samples];
-        let observation =
-            observation_for(config.request(), format, backend.estimated_latency_frames());
+        let observation = backend.output_observation(config.request());
         Ok(Self {
             backend,
             fallback_policy: config.fallback_policy(),
@@ -878,12 +1221,17 @@ fn observation_for(
     )
 }
 
+fn fallback_for(policy: FallbackPolicy, fallback: OutputFallback) -> Option<OutputFallback> {
+    matches!(policy, FallbackPolicy::DefaultDevice).then_some(fallback)
+}
+
 #[cfg(all(windows, target_arch = "x86_64"))]
 mod platform;
 
 #[cfg(all(windows, target_arch = "x86_64"))]
 pub use platform::{
-    WasapiDeviceEnumerator, WasapiSharedBackend, WasapiSharedOutput, enumerate_devices, open_shared,
+    WasapiDeviceEnumerator, WasapiExclusiveBackend, WasapiExclusiveOutput, WasapiSharedBackend,
+    WasapiSharedOutput, enumerate_devices, open_exclusive, open_shared,
 };
 
 #[cfg(not(windows))]
@@ -895,6 +1243,20 @@ pub use platform::{
 /// Always returns [`SharedOutputError::Unavailable`] on non-Windows hosts.
 pub fn open_shared(_config: &SharedOutputConfig) -> Result<(), SharedOutputError> {
     Err(SharedOutputError::Unavailable {
+        reason: OutputUnavailableReason::BackendUnavailable,
+        fallback: None,
+    })
+}
+
+#[cfg(not(windows))]
+/// Exclusive output is unavailable on non-Windows hosts; deterministic tests
+/// should use [`open_exclusive_with_shared_fallback`] with a fake factory.
+///
+/// # Errors
+///
+/// Always returns [`ExclusiveOutputError::Unavailable`].
+pub fn open_exclusive(_config: &ExclusiveOutputConfig) -> Result<(), ExclusiveOutputError> {
+    Err(ExclusiveOutputError::Unavailable {
         reason: OutputUnavailableReason::BackendUnavailable,
         fallback: None,
     })
@@ -912,6 +1274,7 @@ mod tests {
     struct FakeBackend {
         device: DeviceInfo,
         format: AudioFormat,
+        exclusive_evidence: bool,
         buffer_frames: usize,
         period_frames: usize,
         latency_frames: Option<u64>,
@@ -927,6 +1290,7 @@ mod tests {
                 device: DeviceInfo::new("fake-device", "Fake DAC", DeviceState::Active, true)
                     .expect("fake id is valid"),
                 format,
+                exclusive_evidence: false,
                 buffer_frames: 8,
                 period_frames: 4,
                 latency_frames: Some(32),
@@ -957,6 +1321,24 @@ mod tests {
 
         fn estimated_latency_frames(&self) -> Option<u64> {
             self.latency_frames
+        }
+
+        fn output_observation(&self, request: OutputRequest) -> OutputObservation {
+            if self.exclusive_evidence {
+                OutputObservation::new(
+                    Some(self.format),
+                    Some(PlaybackRate::NORMAL),
+                    Some(Volume::UNITY),
+                    self.latency_frames,
+                    FormatConversionStatus::NotApplied,
+                    ResamplingStatus::NotApplied,
+                    ChannelMappingStatus::Identity,
+                    Some(false),
+                    Some(false),
+                )
+            } else {
+                super::observation_for(request, self.format, self.latency_frames)
+            }
         }
 
         fn current_padding_frames(&mut self) -> Result<usize, RenderBackendError> {
@@ -1016,6 +1398,226 @@ mod tests {
             PlaybackRate::NORMAL,
             Volume::UNITY,
         )
+    }
+
+    #[derive(Debug)]
+    struct FakeExclusiveFactory {
+        support: ExclusiveFormatSupport,
+        exclusive_query_error: Option<ExclusiveOutputError>,
+        exclusive_error: Option<ExclusiveOutputError>,
+        shared_error: Option<SharedOutputError>,
+        shared_format: AudioFormat,
+        exclusive_calls: usize,
+        shared_calls: usize,
+    }
+
+    impl FakeExclusiveFactory {
+        fn new(support: ExclusiveFormatSupport, shared_format: AudioFormat) -> Self {
+            Self {
+                support,
+                exclusive_query_error: None,
+                exclusive_error: None,
+                shared_error: None,
+                shared_format,
+                exclusive_calls: 0,
+                shared_calls: 0,
+            }
+        }
+
+        fn prepared(
+            config: &SharedOutputConfig,
+            format: AudioFormat,
+            exclusive_evidence: bool,
+        ) -> Result<SharedOutput<FakeBackend>, SharedOutputError> {
+            let mut backend = FakeBackend::new(format);
+            backend.exclusive_evidence = exclusive_evidence;
+            SharedOutput::from_backend(config, backend)
+        }
+    }
+
+    impl ExclusiveBackendFactory for FakeExclusiveFactory {
+        type ExclusiveBackend = FakeBackend;
+        type SharedBackend = FakeBackend;
+
+        fn exclusive_format_support(
+            &mut self,
+            _requested: AudioFormat,
+        ) -> Result<ExclusiveFormatSupport, ExclusiveOutputError> {
+            if let Some(error) = self.exclusive_query_error.take() {
+                return Err(error);
+            }
+            Ok(self.support)
+        }
+
+        fn open_exclusive(
+            &mut self,
+            config: &ExclusiveOutputConfig,
+            negotiated_format: AudioFormat,
+        ) -> Result<SharedOutput<Self::ExclusiveBackend>, ExclusiveOutputError> {
+            self.exclusive_calls += 1;
+            if let Some(error) = self.exclusive_error.take() {
+                return Err(error);
+            }
+            Self::prepared(&config.shared_config(), negotiated_format, true).map_err(|error| {
+                ExclusiveOutputError::InvalidConfiguration {
+                    field: match error {
+                        SharedOutputError::InvalidConfiguration { field } => field,
+                        _ => "fake backend",
+                    },
+                }
+            })
+        }
+
+        fn open_shared(
+            &mut self,
+            config: &SharedOutputConfig,
+        ) -> Result<SharedOutput<Self::SharedBackend>, SharedOutputError> {
+            self.shared_calls += 1;
+            if let Some(error) = self.shared_error.take() {
+                return Err(error);
+            }
+            Self::prepared(config, self.shared_format, false)
+        }
+    }
+
+    #[test]
+    fn exclusive_exact_request_reports_actual_format_and_complete_evidence() {
+        let format = AudioFormat::new(96_000, 2, SampleFormat::I24).expect("format is valid");
+        let config = ExclusiveOutputConfig::new(request(format));
+        let mut factory = FakeExclusiveFactory::new(ExclusiveFormatSupport::Exact, format);
+        let output = open_exclusive_with_shared_fallback(&mut factory, &config)
+            .expect("exact Exclusive request prepares");
+
+        let ExclusiveOpenOutput::Exclusive(output) = output else {
+            panic!("exact support must not fall back");
+        };
+        assert_eq!(output.negotiated_format(), format);
+        assert_eq!(output.report().negotiated_output_format(), Some(format));
+        assert!(output.report().bit_perfect_eligible());
+        assert_eq!(factory.exclusive_calls, 1);
+        assert_eq!(factory.shared_calls, 0);
+    }
+
+    #[test]
+    fn exclusive_backend_failure_uses_typed_shared_fallback() {
+        let format = AudioFormat::f32(48_000, 2).expect("format is valid");
+        let config = ExclusiveOutputConfig::new(request(format));
+        let mut factory = FakeExclusiveFactory::new(ExclusiveFormatSupport::Exact, format);
+        factory.exclusive_error = Some(ExclusiveOutputError::Backend {
+            operation: RenderOperation::Initialize,
+            hresult: Some(-2),
+            fallback: Some(OutputFallback::SharedMode),
+        });
+
+        let output = open_exclusive_with_shared_fallback(&mut factory, &config)
+            .expect("Shared fallback handles Exclusive setup failure");
+        assert!(matches!(output, ExclusiveOpenOutput::SharedFallback(_)));
+        assert_eq!(factory.exclusive_calls, 1);
+        assert_eq!(factory.shared_calls, 1);
+    }
+
+    #[test]
+    fn closest_exclusive_format_is_reported_separately_from_request() {
+        let requested = AudioFormat::new(96_000, 2, SampleFormat::I24).expect("format is valid");
+        let closest = AudioFormat::f32(48_000, 2).expect("format is valid");
+        let config = ExclusiveOutputConfig::new(request(requested));
+        let mut factory =
+            FakeExclusiveFactory::new(ExclusiveFormatSupport::Closest(closest), closest);
+        let output = open_exclusive_with_shared_fallback(&mut factory, &config)
+            .expect("closest Exclusive format prepares");
+
+        let ExclusiveOpenOutput::Exclusive(output) = output else {
+            panic!("closest support is still an Exclusive success");
+        };
+        assert_eq!(output.report().requested_output_format(), Some(requested));
+        assert_eq!(output.report().negotiated_output_format(), Some(closest));
+        assert!(!output.report().bit_perfect_eligible());
+    }
+
+    #[test]
+    fn unsupported_exclusive_format_uses_typed_shared_fallback() {
+        let requested = AudioFormat::new(96_000, 2, SampleFormat::I24).expect("format is valid");
+        let shared = AudioFormat::f32(48_000, 2).expect("format is valid");
+        let config = ExclusiveOutputConfig::new(request(requested));
+        let mut factory = FakeExclusiveFactory::new(ExclusiveFormatSupport::Unsupported, shared);
+        let output = open_exclusive_with_shared_fallback(&mut factory, &config)
+            .expect("Shared fallback prepares");
+
+        let ExclusiveOpenOutput::SharedFallback(output) = output else {
+            panic!("unsupported Exclusive format must use Shared fallback");
+        };
+        assert_eq!(output.negotiated_format(), shared);
+        assert_eq!(output.report().observation().dsp_enabled(), None);
+        assert!(!output.report().bit_perfect_eligible());
+        assert_eq!(factory.exclusive_calls, 0);
+        assert_eq!(factory.shared_calls, 1);
+    }
+
+    #[test]
+    fn exclusive_format_query_failure_uses_typed_shared_fallback() {
+        let format = AudioFormat::f32(48_000, 2).expect("format is valid");
+        let config = ExclusiveOutputConfig::new(request(format));
+        let mut factory = FakeExclusiveFactory::new(ExclusiveFormatSupport::Exact, format);
+        factory.exclusive_query_error = Some(ExclusiveOutputError::Backend {
+            operation: RenderOperation::NegotiateFormat,
+            hresult: Some(-1),
+            fallback: Some(OutputFallback::SharedMode),
+        });
+
+        let output = open_exclusive_with_shared_fallback(&mut factory, &config)
+            .expect("Shared fallback handles a typed Exclusive query failure");
+        assert!(matches!(output, ExclusiveOpenOutput::SharedFallback(_)));
+        assert_eq!(factory.exclusive_calls, 0);
+        assert_eq!(factory.shared_calls, 1);
+    }
+
+    #[test]
+    fn disabled_exclusive_fallback_returns_original_typed_error_without_retry() {
+        let format = AudioFormat::f32(48_000, 2).expect("format is valid");
+        let config = ExclusiveOutputConfig::new(request(format))
+            .with_fallback_policy(FallbackPolicy::Disabled);
+        let mut factory = FakeExclusiveFactory::new(ExclusiveFormatSupport::Unsupported, format);
+        let error = open_exclusive_with_shared_fallback(&mut factory, &config)
+            .expect_err("disabled fallback must preserve the Exclusive error");
+
+        assert_eq!(factory.shared_calls, 0);
+        assert_eq!(
+            error,
+            ExclusiveOpenError::Exclusive(ExclusiveOutputError::FormatNegotiation {
+                requested: format,
+                closest: None,
+                fallback: None,
+            })
+        );
+    }
+
+    #[test]
+    fn shared_fallback_failure_preserves_both_typed_failures() {
+        let format = AudioFormat::f32(48_000, 2).expect("format is valid");
+        let config = ExclusiveOutputConfig::new(request(format));
+        let mut factory = FakeExclusiveFactory::new(ExclusiveFormatSupport::Unsupported, format);
+        factory.shared_error = Some(SharedOutputError::Unavailable {
+            reason: OutputUnavailableReason::BackendUnavailable,
+            fallback: None,
+        });
+        let error = open_exclusive_with_shared_fallback(&mut factory, &config)
+            .expect_err("failed Shared retry is returned as a typed composite error");
+
+        assert_eq!(
+            error,
+            ExclusiveOpenError::SharedFallback {
+                exclusive: ExclusiveOutputError::FormatNegotiation {
+                    requested: format,
+                    closest: None,
+                    fallback: Some(OutputFallback::SharedMode),
+                },
+                shared: SharedOutputError::Unavailable {
+                    reason: OutputUnavailableReason::BackendUnavailable,
+                    fallback: None,
+                },
+            }
+        );
+        assert_eq!(factory.shared_calls, 1);
     }
 
     #[test]

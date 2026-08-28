@@ -52,3 +52,44 @@ missing.
 The current implementation is x64-only (`win-x64`). A native Windows picker
 adapter and Core/FFI projection are separate slices and are intentionally not
 implemented in this project.
+
+## G3-09 Windows system media control boundary
+
+`WindowsMediaControlContracts.cs` defines the public-safe typed boundary for a
+real System Media Transport Controls (SMTC) host:
+
+- `WindowsPlaybackSnapshot` mirrors the Core playback state, opaque item ID,
+  state/buffer revisions, and the Core-owned `WindowsPresentationClock`.
+- `WindowsMediaMetadata` carries display metadata and optional duration only;
+  it never carries a path, URL, credential, provider handle, or native lease.
+- `WindowsSmTcProjection` contains playback status, metadata, timeline,
+  seek range, playback rate, clock epoch, and enabled system actions.
+- `WindowsMediaControlAction` maps Play, Pause, Stop, Previous, Next, and Seek
+  to one `WindowsCorePlaybackCommand` through
+  `IWindowsCorePlaybackCommandSink`; Play becomes Core `Resume` when the
+  latest snapshot is paused and Core `Play` otherwise.
+- `WindowsMediaControlHostEvent` carries ordered host/device lifecycle events
+  through `IWindowsMediaControlLifecycleSink`.
+
+`WindowsSmTcProjectionGateway` is a bounded latest-value gate. A state or
+metadata change is applied immediately. Progress samples are ordered using the
+sampling source's sequence and Core clock epoch, merged into the one latest
+snapshot, and applied only when the host explicitly calls `FlushProgress`.
+There is no platform queue, background worker, wall clock, local position
+counter, playback reducer, or UI timer-owned state. Request IDs, clock values,
+sample ordering, and lifecycle timestamps come from the Core-facing host or
+native adapter.
+
+The project intentionally does not reference Windows Runtime SMTC types. A
+later native host can translate `WindowsSmTcProjection` into
+`SystemMediaTransportControls`, `SystemMediaTransportControlsTimelineProperties`,
+and `MediaPlaybackItem` metadata. The included `FakeWindowsMediaControlSink`
+records projections, Core commands, and lifecycle events for deterministic
+contract probes.
+
+No standalone test project existed in this directory when G3-09 started. Per
+the scope restriction, this slice does not create a project outside the
+existing solution or alter the solution file. Verification is therefore
+limited to the project build and source-level contract probes; native SMTC
+registration, callback delivery, packaged WinUI integration, and Windows
+Runtime behavior remain unverified until a host adapter is introduced.
