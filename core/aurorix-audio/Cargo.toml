@@ -8,3 +8,16 @@ version.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+ogg = "0.9.2"
+opus-decoder = "0.1.1"
+symphonia = { version = "0.6.1", default-features = false, features = [
+    "aac",
+    "flac",
+    "isomp4",
+    "mp3",
+    "ogg",
+    "pcm",
+    "wav",
+] }
