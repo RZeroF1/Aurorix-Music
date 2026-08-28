@@ -1,0 +1,10 @@
+# Public generation contract for the bootstrap FFI envelope.
+#
+# The complete reviewed facade schema is supplied by a local maintainer when
+# it is approved for publication. Do not point a public build artifact at a
+# private schema or check in outputs generated from one.
+schema_major = 1
+protoc_version = "27.3"
+proto = "schema/ffi-v1.proto"
+descriptor = "generated/ffi-v1.descriptor.pb"
+descriptor_sha256 = "generated/ffi-v1.descriptor.pb.sha256"

@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package aurorix.ffi.v1;
+
+// Public bootstrap schema. The reviewed full facade schema is maintained by
+// the local maintainer until it is approved for publication.
+message FfiRequestV1 {
+  uint32 schema_version = 1;
+  string request_id = 2;
+
+  oneof body {
+    PingRequestV1 ping = 10;
+    ExtensionRequestV1 extension = 11;
+  }
+}
+
+message PingRequestV1 {}
+
+message FfiResponseV1 {
+  uint32 schema_version = 1;
+  string request_id = 2;
+
+  oneof body {
+    PongResponseV1 pong = 10;
+    FfiErrorV1 error = 11;
+  }
+}
+
+message PongResponseV1 {}
+
+message FfiErrorV1 {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+}
+
+message ExtensionRequestV1 {
+  string namespace = 1;
+  string schema_version = 2;
+  bytes payload = 3;
+}
