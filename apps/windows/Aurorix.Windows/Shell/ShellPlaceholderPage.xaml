@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Aurorix.Windows.Shell.ShellPlaceholderPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    HighContrastAdjustment="Auto"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <ScrollViewer
+        Padding="32,20,32,36"
+        HorizontalScrollBarVisibility="Disabled"
+        VerticalScrollBarVisibility="Auto"
+        AutomationProperties.Name="页面滚动区域">
+        <StackPanel
+            MaxWidth="860"
+            Spacing="14">
+            <TextBlock
+                x:Name="PageTitleText"
+                FontSize="28"
+                FontWeight="SemiBold"
+                Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}"
+                Text="Aurorix"
+                TextWrapping="Wrap" />
+            <TextBlock
+                x:Name="PageDescriptionText"
+                FontSize="14"
+                Foreground="{ThemeResource SystemControlForegroundBaseMediumLowBrush}"
+                Text="Shell route"
+                TextWrapping="Wrap" />
+            <Border
+                Margin="0,10,0,0"
+                Padding="18"
+                Background="{ThemeResource SystemControlBackgroundAltHighBrush}"
+                BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+                <StackPanel Spacing="8">
+                    <TextBlock
+                        FontSize="15"
+                        FontWeight="SemiBold"
+                        Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}"
+                        Text="宿主占位页" />
+                    <TextBlock
+                        FontSize="13"
+                        Foreground="{ThemeResource SystemControlForegroundBaseMediumLowBrush}"
+                        Text="此页面只验证 shell 导航与内容承载。业务状态、队列、时钟和统计不会在 UI 层复制。"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

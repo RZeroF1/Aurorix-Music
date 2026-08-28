@@ -93,3 +93,28 @@ existing solution or alter the solution file. Verification is therefore
 limited to the project build and source-level contract probes; native SMTC
 registration, callback delivery, packaged WinUI integration, and Windows
 Runtime behavior remain unverified until a host adapter is introduced.
+
+## G3-13 Extension contribution registry
+
+`Extensions/ExtensionContracts.cs` and
+`Extensions/ExtensionContributionRegistry.cs` define a versioned, data-only
+host boundary for three contribution kinds:
+
+- bounded semantic theme token overrides, including explicit material fallback;
+- host-rendered action metadata for the reserved action slots;
+- page route metadata and primitive parameter schemas for host-rendered
+  placeholder pages.
+
+Registration is all-or-nothing. Unknown schema majors, unsupported capability
+versions, undeclared capabilities, invalid ordering hints, duplicate routes,
+invalid token values, and malformed action/page metadata are rejected without
+changing an existing registration. Enabled contributions are projected in
+stable ordering (`ordering hint`, extension ID, contribution ID/route); disabled
+extensions are absent from theme, action, and page projections and cannot
+dispatch an action.
+
+`BuiltInTestContribution` supplies a deterministic action, token override, and
+placeholder page for contract probes. The registry contains no page factory,
+XAML/native assembly loader, third-party DSP or Provider activation, or local
+process runtime. `ExtensionContractTests.cs` is compiled only with
+`WINDOWS_PLATFORM_CONTRACT_TESTS` by the temporary contract runner.

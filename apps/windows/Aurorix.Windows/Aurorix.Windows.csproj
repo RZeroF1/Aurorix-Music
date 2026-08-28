@@ -6,10 +6,10 @@
     <RootNamespace>Aurorix.Windows</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x64</Platforms>
-    <Platform Condition="'$(Platform)' == '' or '$(Platform)' == 'AnyCPU'">x64</Platform>
+    <Platform>x64</Platform>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
-    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' or '$(RuntimeIdentifier)' == 'win-anycpu'">win-x64</RuntimeIdentifier>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <WindowsPackageType>MSIX</WindowsPackageType>
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
